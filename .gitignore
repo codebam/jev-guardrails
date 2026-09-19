@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+npm-debug.log*
+.env
+.env.*
+.openrouter-key
+.openrouter-key*
+!.env.example
+coverage/
+.uje*

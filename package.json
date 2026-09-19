@@ -1,0 +1,28 @@
+{
+  "name": "dsh-jev-guardrails",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jev-backed guardrails and verification for LLM apps, plus a thin DeepSeek Harness plugin.",
+  "type": "module",
+  "workspaces": [
+    "packages/jev-guardrails",
+    "packages/dsh-jev-guardrails"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @codebam/jev-guardrails",
+    "typecheck": "npm run typecheck --workspace @codebam/jev-guardrails",
+    "check": "npm run check --workspace @codebam/jev-guardrails && npm run check --workspace @codebam/dsh-jev-guardrails",
+    "test": "npm run build && npm run test --workspaces --if-present",
+    "test:lib": "npm run build && npm run test --workspace @codebam/jev-guardrails",
+    "peers": "node scripts/link-dsh-peers.mjs",
+    "pack:dry": "npm run build && npm pack --dry-run --workspace @codebam/jev-guardrails && npm pack --dry-run --workspace @codebam/dsh-jev-guardrails",
+    "test:live": "npm run build && node scripts/live-openrouter.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

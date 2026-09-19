@@ -1,0 +1,56 @@
+{
+  "name": "@codebam/jev-guardrails",
+  "version": "0.1.0",
+  "description": "Jev-backed guardrails and verification for LLM inputs, outputs, tool calls, and untrusted content.",
+  "keywords": [
+    "jev",
+    "typesafe",
+    "guardrails",
+    "llm",
+    "ai-safety",
+    "prompt-injection",
+    "verification",
+    "system-one"
+  ],
+  "license": "MIT",
+  "author": "Sean Behan (codebam)",
+  "homepage": "https://github.com/codebam/dsh-jev-guardrails#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codebam/dsh-jev-guardrails.git",
+    "directory": "packages/jev-guardrails"
+  },
+  "bugs": {
+    "url": "https://github.com/codebam/dsh-jev-guardrails/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "check": "npm run typecheck && for f in test/*.mjs; do node --check \"$f\" || exit 1; done"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0"
+  }
+}

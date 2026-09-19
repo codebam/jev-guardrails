@@ -1,0 +1,66 @@
+{
+  "name": "@codebam/dsh-jev-guardrails",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: Jev-backed guardrails for prompts, tool calls, tool results, and model responses.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "jev",
+    "typesafe",
+    "guardrails",
+    "prompt-injection",
+    "ai-safety",
+    "cordis",
+    "plugin"
+  ],
+  "license": "MIT",
+  "author": "Sean Behan (codebam)",
+  "homepage": "https://github.com/codebam/dsh-jev-guardrails#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codebam/dsh-jev-guardrails.git",
+    "directory": "packages/dsh-jev-guardrails"
+  },
+  "bugs": {
+    "url": "https://github.com/codebam/dsh-jev-guardrails/issues"
+  },
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./config": "./src/config.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "check": "for f in index.mjs src/*.mjs; do node --check \"$f\" || exit 1; done",
+    "test": "node --test test/*.test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@codebam/jev-guardrails": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh-llm": { "optional": true },
+    "@deepseek-ai/dsh-tools": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  }
+}
