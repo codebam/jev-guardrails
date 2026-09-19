@@ -16,7 +16,8 @@
     "test:lib": "npm run build && npm run test --workspace @codebam/jev-guardrails",
     "peers": "node scripts/link-dsh-peers.mjs",
     "pack:dry": "npm run build && npm pack --dry-run --workspace @codebam/jev-guardrails && npm pack --dry-run --workspace @codebam/dsh-jev-guardrails",
-    "test:live": "npm run build && node scripts/live-openrouter.mjs"
+    "test:live": "npm run build && node scripts/live-openrouter.mjs",
+    "test:dsh": "npm run build && node scripts/dsh-smoke.mjs"
   },
   "engines": {
     "node": ">=20"

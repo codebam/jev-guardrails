@@ -94,6 +94,7 @@ decision mapping, and safety note.
 ```bash
 npm run check        # typecheck + syntax checks
 npm test             # library and plugin tests, fake providers + local HTTP servers
+npm run test:dsh     # mounts the plugin into a throwaway real dsh profile
 npm run pack:dry     # npm package dry-runs
 npm run test:live    # real Jev through OpenRouter (needs OPENROUTER_API_KEY)
 ```
