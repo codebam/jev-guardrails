@@ -110,13 +110,16 @@ workspace if you want to run the live check from inside a sandbox:
 
 ```bash
 # host shell
-install -m 600 /run/secrets/openrouter-api-key \
-  /home/codebam/Documents/git/dsh-jev-guardrails/.openrouter-key
+cd ~/Documents/git/dsh-jev-guardrails
+install -m 600 /run/secrets/openrouter-api-key .openrouter-key
+npm install
 npm run test:live
 ```
 
 `.openrouter-key` and `.env.local` are gitignored. The live script prints
-verdicts, model id, tokens, and OpenRouter cost; it never prints the key.
+verdicts, model id, tokens, and OpenRouter cost; it never prints the key. If
+you are working through a dsh sandbox, writing `.openrouter-key` into the
+mounted repository is enough for the same check to run inside the sandbox.
 
 ## Design notes
 
