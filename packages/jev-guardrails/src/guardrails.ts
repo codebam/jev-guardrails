@@ -6,7 +6,7 @@
  */
 import { choice } from '@typesafe-ai/sdk'
 import type { Questions, SystemOneRequest } from '@typesafe-ai/sdk'
-import { ACTION_BATTERY, DEFAULT_BATTERIES, INPUT_BATTERY, OBSERVATION_BATTERY, OUTPUT_BATTERY } from './batteries.js'
+import { ACTION_BATTERY, INPUT_BATTERY, OBSERVATION_BATTERY, OUTPUT_BATTERY } from './batteries.js'
 import { GuardrailsError, JevCaller, createTransport } from './client.js'
 import type { AskOptions, AskResult } from './client.js'
 import { classifyActionLocally } from './heuristics.js'
