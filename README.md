@@ -65,13 +65,17 @@ batteries, fail modes, redaction, caching, and custom questions.
 ## Quick start (DeepSeek Harness plugin)
 
 ```bash
-cd "$DSH_HOME/profiles/<profile>"
-npm install @codebam/dsh-jev-guardrails
+# Web: Plugins -> Add plugin -> @codebam/dsh-jev-guardrails
 ```
 
+The package is a dsh bundle: it declares `dsh.bundle.patch`, so installing it
+selects the bundle and it appears under **Installed** in the Plugins page. Its bundled `cordis.patch.yml` inserts the row with these
+defaults; override any field by adding a row with the same `id` to the
+profile's own patch:
+
 ```yaml
-# cordis.patch.yml
-- name: '@codebam/dsh-jev-guardrails'
+- id: jev-guardrails
+  name: '@codebam/dsh-jev-guardrails'
   config:
     provider: auto              # detects TYPESAFE_API_KEY / OPENROUTER_API_KEY
     input: block                # reject blocked prompts

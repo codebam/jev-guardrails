@@ -1,0 +1,15 @@
+# @codebam/dsh-jev-guardrails bundle patch.
+#
+# One root row. The profile's own cordis.patch.yml can override any field by
+# `id`, and a bundle toggle enables or disables this whole layer. Values here
+# are the shipped defaults; the plugin normalizes anything omitted.
+- insert:
+    - id: jev-guardrails
+      name: '@codebam/dsh-jev-guardrails'
+      config:
+        provider: auto
+        input: block
+        actions: enforce
+        observations: suspicious
+        outputs: off
+        log: decisions

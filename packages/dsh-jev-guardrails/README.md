@@ -19,24 +19,37 @@ it traps every runtime failure so a guardrail cannot take down a turn.
 
 ## Install
 
-```bash
-cd "$DSH_HOME/profiles/<profile>"
-npm install @codebam/dsh-jev-guardrails
-```
+The package is a dsh **bundle**: it declares `dsh.bundle.patch`, ships its own
+`cordis.patch.yml`, and appears in the Plugins page once selected. Install it
+from the Web **Plugins → Add plugin** dialog with the spec
+`@codebam/dsh-jev-guardrails`; the dialog runs the same package operation as
+`dsh plugin` and selects the bundle for the active profile.
 
-Add a row to the profile's `cordis.patch.yml`:
+The bundle's patch inserts one row, `id: jev-guardrails`, with the default
+configuration:
 
 ```yaml
-- name: '@codebam/dsh-jev-guardrails'
-  config:
-    input: block
-    actions: enforce
-    observations: suspicious
-    outputs: off
+- insert:
+    - id: jev-guardrails
+      name: '@codebam/dsh-jev-guardrails'
+      config:
+        provider: auto
+        input: block
+        actions: enforce
+        observations: suspicious
+        outputs: off
 ```
 
-The plugin resolves `tools` before mounting. If no provider key is available it
-logs a warning and leaves the profile running.
+Override any field by adding a row with the same `id` to the profile's own
+`cordis.patch.yml`. The plugin resolves `tools` before mounting; if no provider
+key is available it logs a warning and leaves the profile running.
+
+> **Upgrading from 0.1.0:** that version declared no `dsh.bundle`, so dsh
+> installed it as a plain dependency and the Plugins page did not list it.
+> Publish/install `0.1.1` or later, then remove the old plain dependency if it
+> is still in the profile (`dsh plugin --profile <profile> remove
+> @codebam/dsh-jev-guardrails`) and add it again from the Plugins page. The
+> bundle patch then inserts the row and the toggle appears under **Installed**.
 
 ## Providers and keys
 
