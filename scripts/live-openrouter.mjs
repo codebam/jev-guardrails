@@ -50,6 +50,8 @@ const guardrails = createGuardrails({
 
 const checks = []
 
+const totals = { input_tokens: 0, output_tokens: 0, cost: 0 }
+
 async function check(name, fn, assert) {
   const label = name.padEnd(28)
   process.stdout.write(`${label} ... `)
@@ -59,7 +61,16 @@ async function check(name, fn, assert) {
       ? verdict.reasons[0] ?? 'no hazard'
       : `${verdict.topHazard.name} ${verdict.topHazard.probability.toFixed(2)}`
     const extra = verdict.severity === undefined ? '' : ` sev=${verdict.severity.toFixed(1)}`
-    console.log(`${verdict.action.padEnd(7)} ${top}${extra}`)
+    const usage = verdict.usage === undefined
+      ? ''
+      : ` | ${verdict.model ?? 'unknown'} ${verdict.usage.input_tokens}in/${verdict.usage.output_tokens}out` +
+        (verdict.usage.cost === undefined ? '' : ` $${verdict.usage.cost.toFixed(6)}`)
+    if (verdict.usage !== undefined) {
+      totals.input_tokens += verdict.usage.input_tokens
+      totals.output_tokens += verdict.usage.output_tokens
+      totals.cost += verdict.usage.cost ?? 0
+    }
+    console.log(`${verdict.action.padEnd(7)} ${top}${extra}${usage}`)
     checks.push({ name, passed: assert(verdict), verdict })
   } catch (error) {
     console.log(`ERROR ${error instanceof Error ? error.message : String(error)}`)
@@ -110,12 +121,17 @@ await check(
     topHazard: undefined,
     reasons: [result.reason],
     severity: undefined,
+    model: result.model,
+    usage: result.usage,
   })),
   (verdict) => verdict.action === 'allow',
 )
 
 const failures = checks.filter((checkResult) => !checkResult.passed)
-console.log(`\n${checks.length - failures.length}/${checks.length} checks passed`)
+console.log(
+  `\n${checks.length - failures.length}/${checks.length} checks passed` +
+  ` | ${totals.input_tokens}in/${totals.output_tokens}out | $${totals.cost.toFixed(6)} estimated`,
+)
 for (const failure of failures) {
   console.log(`  FAILED: ${failure.name}${failure.error ? ` (${failure.error.message})` : ''}`)
 }
