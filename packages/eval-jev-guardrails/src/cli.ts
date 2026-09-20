@@ -1,10 +1,12 @@
 /**
  * `eval-jev` command line interface.
  *
- * Commands: `login`, `install opencode|hermes|dsh`, `doctor`, `credits`.
+ * Commands: `login` (GitHub device flow or `--token`),
+ * `install opencode|hermes|dsh`, `buy`, `doctor`, `credits`.
  *
  * @module @codebam/eval-jev-guardrails/cli
  */
+import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline/promises'
 import { EvalGuardrailsClient } from './client.js'
@@ -15,6 +17,8 @@ import { installDsh } from './install/dsh.js'
 import { installHermes } from './install/hermes.js'
 import { installOpenCode } from './install/opencode.js'
 import type { InstallResult } from './install/types.js'
+import { EVAL_CREDIT_PACKS } from './types.js'
+import type { EvalCreditPack } from './types.js'
 import { PACKAGE_VERSION } from './version.js'
 
 /** Host interface used by the CLI; injectable for tests. */
@@ -28,6 +32,8 @@ export interface CliIO {
   prompt?: (question: string) => Promise<string | undefined>
   /** Injectable fetch for the device-flow login. */
   fetch?: typeof globalThis.fetch
+  /** Injectable opener used by `buy --open`; defaults to the platform opener. */
+  openExternal?: (url: string) => void
 }
 
 const INSTALL_HARNESSES = ['opencode', 'hermes', 'dsh'] as const
@@ -42,6 +48,7 @@ const VALUE_FLAGS = new Set([
   'home',
   'dir',
   'timeout',
+  'pack',
 ])
 
 /** Run the CLI and return the process exit code. */
@@ -76,6 +83,8 @@ export async function runCli(argv: string[], overrides: Partial<CliIO> = {}): Pr
         return await commandDoctor(parsed, io)
       case 'credits':
         return await commandCredits(parsed, io)
+      case 'buy':
+        return await commandBuy(parsed, io)
       default:
         io.stderr(`eval-jev: unknown command "${command}"\n\n${usage()}`)
         return 2
@@ -219,6 +228,59 @@ async function commandCredits(parsed: ParsedArgs, io: CliIO): Promise<number> {
   return 0
 }
 
+/** `eval-jev buy [--pack p5000|...] [--open] [--json]`. */
+async function commandBuy(parsed: ParsedArgs, io: CliIO): Promise<number> {
+  const pack = flagString(parsed, 'pack')
+  if (pack === undefined || !EVAL_CREDIT_PACKS.includes(pack as EvalCreditPack)) {
+    io.stderr(
+      `eval-jev buy: --pack must be one of ${EVAL_CREDIT_PACKS.join(', ')}` +
+        `${pack !== undefined ? ` (got "${pack}")` : ''}\n\n${usage('buy')}`,
+    )
+    return 2
+  }
+
+  const client = new EvalGuardrailsClient({
+    env: io.env,
+    home: flagString(parsed, 'home') ?? io.home,
+    ...(flagString(parsed, 'config') !== undefined ? { configPath: flagString(parsed, 'config') as string } : {}),
+    ...(flagString(parsed, 'base-url') !== undefined ? { baseUrl: flagString(parsed, 'base-url') as string } : {}),
+  })
+  const checkout = await client.checkout(pack as EvalCreditPack)
+
+  if (parsed.booleans.has('json')) {
+    io.stdout(`${JSON.stringify(checkout, null, 2)}\n`)
+  } else {
+    io.stdout(`Stripe Checkout URL: ${checkout.url}\n`)
+    if (typeof checkout.id === 'string' && checkout.id.length > 0) {
+      io.stdout(`Checkout session: ${checkout.id}\n`)
+    }
+  }
+  if (parsed.booleans.has('open')) {
+    const open = io.openExternal ?? ((url: string) => openExternalUrl(url, (message) => io.stderr(`${message}\n`)))
+    open(checkout.url)
+  }
+  return 0
+}
+
+/**
+ * Best-effort platform opener used by `buy --open`.
+ *
+ * Never throws: a missing opener only produces an `onError` message, because
+ * the printed checkout URL is still enough to complete the purchase.
+ */
+export function openExternalUrl(url: string, onError?: (message: string) => void): void {
+  const platform = process.platform
+  const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'cmd' : 'xdg-open'
+  const args = platform === 'win32' ? ['/c', 'start', '', url] : [url]
+  try {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+    child.on('error', (error) => onError?.(`could not open ${url}: ${error.message}`))
+    child.unref()
+  } catch (error) {
+    onError?.(`could not open ${url}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 /** GitHub-device-style login. Returns undefined when the server has no device flow. */
 async function deviceFlowLogin(baseUrl: string, io: CliIO): Promise<string | undefined> {
   const fetchImpl = io.fetch ?? globalThis.fetch
@@ -245,10 +307,12 @@ async function deviceFlowLogin(baseUrl: string, io: CliIO): Promise<string | und
 
   io.stdout(`Open ${verificationUri}${stringValue(device.verification_uri_complete) !== undefined ? ` or ${String(device.verification_uri_complete)}` : ''}\n`)
   io.stdout(`Enter code: ${userCode}\n`)
-  const intervalMs = Math.max(1, Number(device.interval ?? 5)) * 1000
-  const expiresAt = Date.now() + Math.max(30, Number(device.expires_in ?? 600)) * 1000
+  const intervalMs = normalizeSeconds(device.interval, 5) * 1000
+  const expiresAt = Date.now() + normalizeSeconds(device.expires_in, 600) * 1000
+  let firstPoll = true
   while (Date.now() < expiresAt) {
-    await sleep(intervalMs)
+    if (firstPoll) firstPoll = false
+    else await sleep(intervalMs)
     try {
       const response = await fetchImpl(`${baseUrl}/v1/auth/device/token`, {
         method: 'POST',
@@ -361,6 +425,11 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
+function normalizeSeconds(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return fallback
+  return value
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -383,6 +452,17 @@ function usage(command?: string): string {
   }
   if (command === 'login') {
     return `eval-jev login [--token eval_...] [--base-url <url>] [--config <path>]
+
+Without --token, starts the service's GitHub device flow. --token remains
+supported for CI and for servers where the device flow is unavailable.
+`
+  }
+  if (command === 'buy') {
+    return `eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--open] [--json]
+
+Packs: p5000 = 5,000 credits, p25000 = 25,000, p100000 = 100,000,
+p500000 = 500,000. Creates a Stripe Checkout Session and prints its URL.
+--open also launches the platform browser opener.
 `
   }
   return `eval-jev ${PACKAGE_VERSION} — hosted eval.seanbehan.ca guardrails
@@ -392,10 +472,12 @@ Usage:
   eval-jev install opencode [--project|--global]
   eval-jev install hermes   [--project|--global]
   eval-jev install dsh      [--profile <name>] [--dsh-home <path>] [--no-install]
+  eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--open] [--json]
   eval-jev doctor [opencode|hermes|dsh] [--project|--global] [--offline] [--json]
   eval-jev credits [--json]
   eval-jev version
 
+login without --token uses the GitHub device flow; --token still works.
 Config: EVAL_API_KEY / EVAL_BASE_URL, then ~/.config/eval-jev/config.json.
 `
 }

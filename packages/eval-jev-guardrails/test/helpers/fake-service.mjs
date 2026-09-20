@@ -106,6 +106,14 @@ export async function startFakeEvalService(options = {}) {
       respond(200, { id: 'user-1', login: 'tester', email: 'tester@example.com', credits: 37 })
       return
     }
+    if (record.method === 'POST' && record.url === '/v1/billing/checkout') {
+      const pack = typeof body?.pack === 'string' ? body.pack : 'unknown'
+      respond(200, {
+        url: `https://checkout.stripe.test/session/${pack}`,
+        id: `cs_test_${pack}`,
+      })
+      return
+    }
     respond(404, { error: 'not found' })
   })
 

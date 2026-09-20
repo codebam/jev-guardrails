@@ -94,6 +94,19 @@ export interface EvalSystemOneResponse {
 /** `GET /v1/credits` response. */
 export interface EvalCreditsResponse extends EvalCredits {}
 
+/** Credit packs purchasable through `eval-jev buy` / `POST /v1/billing/checkout`. */
+export const EVAL_CREDIT_PACKS = ['p5000', 'p25000', 'p100000', 'p500000'] as const
+
+/** One purchasable Stripe credit pack id. */
+export type EvalCreditPack = (typeof EVAL_CREDIT_PACKS)[number]
+
+/** `POST /v1/billing/checkout` response: a hosted Stripe Checkout Session. */
+export interface EvalCheckoutResponse {
+  url: string
+  id?: string
+  [key: string]: unknown
+}
+
 /** `GET /v1/me` response. */
 export interface EvalMeResponse {
   id?: string

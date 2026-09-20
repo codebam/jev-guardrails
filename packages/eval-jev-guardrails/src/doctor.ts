@@ -12,7 +12,11 @@ import { maskApiKey, resolveEvalConfig } from './config.js'
 import { hermesPluginsDir } from './install/hermes.js'
 import { openCodeConfigDir } from './install/opencode.js'
 import { resolveDshProfile } from './install/dsh.js'
+import { EVAL_CREDIT_PACKS } from './types.js'
 import type { EvalCreditsResponse, EvalResolvedConfig } from './types.js'
+
+/** Credit balance below which `doctor` suggests `eval-jev buy`. */
+export const LOW_CREDIT_THRESHOLD = 50
 
 /** Harnesses `doctor` understands. */
 export type DoctorHarness = 'opencode' | 'hermes' | 'dsh'
@@ -77,7 +81,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     checks.push({
       name: 'api key',
       status: 'fail',
-      detail: `no key found in EVAL_API_KEY or ${resolved.configPath}; run \`eval-jev login --token eval_...\``,
+      detail: `no key found in EVAL_API_KEY or ${resolved.configPath}; run \`eval-jev login\` (GitHub device flow) or pass --token`,
     })
   } else {
     checks.push({
@@ -99,10 +103,15 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       })
     try {
       const credits = await client.credits()
+      const remaining = creditNumber(credits.remaining)
+      const buyNote =
+        remaining !== undefined && remaining < LOW_CREDIT_THRESHOLD
+          ? `; low balance — run \`eval-jev buy --pack ${EVAL_CREDIT_PACKS[0]}\` to add credits`
+          : ''
       checks.push({
         name: 'service',
         status: 'ok',
-        detail: `${resolved.baseUrl} reachable; ${describeCredits(credits)}`,
+        detail: `${resolved.baseUrl} reachable; ${describeCredits(credits)}${buyNote}`,
       })
     } catch (error) {
       checks.push({

@@ -45,7 +45,7 @@ export type {
   OpenCodeToolOutput,
 } from './opencode.js'
 export * from './install/index.js'
-export { runDoctor } from './doctor.js'
+export { LOW_CREDIT_THRESHOLD, runDoctor } from './doctor.js'
 export type { DoctorCheck, DoctorHarness, DoctorOptions, DoctorReport, DoctorScope } from './doctor.js'
-export { runCli } from './cli.js'
+export { openExternalUrl, runCli } from './cli.js'
 export type { CliIO } from './cli.js'

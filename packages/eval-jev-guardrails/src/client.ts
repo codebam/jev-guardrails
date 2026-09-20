@@ -8,10 +8,13 @@
  * @module @codebam/eval-jev-guardrails/client
  */
 import { EvalConfigError, resolveEvalConfig } from './config.js'
+import { EVAL_CREDIT_PACKS } from './types.js'
 import type { EvalResolvedConfig } from './types.js'
 import type {
   EvalActionDescriptor,
+  EvalCheckoutResponse,
   EvalClientOptions,
+  EvalCreditPack,
   EvalCreditsResponse,
   EvalEvaluation,
   EvalMeResponse,
@@ -128,6 +131,28 @@ export class EvalGuardrailsClient {
   /** Read the current credit balance. */
   async credits(): Promise<EvalCreditsResponse> {
     return this.request<EvalCreditsResponse>('/v1/credits', { method: 'GET', operation: 'credits' })
+  }
+
+  /**
+   * Create a Stripe Checkout Session for one credit pack.
+   *
+   * `pack` must be one of {@link EVAL_CREDIT_PACKS}; an unknown pack fails
+   * before any network request so the CLI can exit 2 without touching the
+   * service.
+   */
+  async checkout(pack: EvalCreditPack): Promise<EvalCheckoutResponse> {
+    if (!EVAL_CREDIT_PACKS.includes(pack)) {
+      throw new EvalConfigError(`pack must be one of ${EVAL_CREDIT_PACKS.join(', ')}; received ${JSON.stringify(pack)}`)
+    }
+    const result = await this.request<EvalCheckoutResponse>('/v1/billing/checkout', {
+      method: 'POST',
+      body: { pack },
+      operation: 'checkout',
+    })
+    if (result === null || typeof result !== 'object' || typeof result.url !== 'string' || result.url.length === 0) {
+      throw new EvalTransportError('the eval service returned no Stripe Checkout URL')
+    }
+    return result
   }
 
   private requireApiKey(operation: string): string {

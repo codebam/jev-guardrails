@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import {
+  EVAL_CREDIT_PACKS,
   EvalApiError,
   EvalConfigError,
   EvalGuardrailsClient,
+  EvalTransportError,
   resolveEvalConfig,
 } from '../dist/index.js'
 import { startFakeEvalService } from './helpers/fake-service.mjs'
@@ -178,5 +180,57 @@ test('config file fallback is actually used for a request', async () => {
   } finally {
     await service.close()
     rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('checkout posts the pack and returns the Stripe Checkout URL', async () => {
+  const service = await startFakeEvalService()
+  try {
+    assert.deepEqual(EVAL_CREDIT_PACKS, ['p5000', 'p25000', 'p100000', 'p500000'])
+    const client = new EvalGuardrailsClient({ apiKey: 'eval_test', baseUrl: service.url })
+    const checkout = await client.checkout('p25000')
+    assert.equal(checkout.url, 'https://checkout.stripe.test/session/p25000')
+    assert.equal(checkout.id, 'cs_test_p25000')
+
+    const request = service.requests.at(-1)
+    assert.equal(request.method, 'POST')
+    assert.equal(request.url, '/v1/billing/checkout')
+    assert.equal(request.headers.authorization, 'Bearer eval_test')
+    assert.deepEqual(request.body, { pack: 'p25000' })
+  } finally {
+    await service.close()
+  }
+})
+
+test('checkout rejects an unknown pack before any network request', async () => {
+  const service = await startFakeEvalService()
+  try {
+    const client = new EvalGuardrailsClient({ apiKey: 'eval_test', baseUrl: service.url })
+    await assert.rejects(() => client.checkout('p1'), (error) => {
+      assert.ok(error instanceof EvalConfigError)
+      assert.match(error.message, /p5000, p25000, p100000, p500000/)
+      assert.match(error.message, /p1/)
+      return true
+    })
+    assert.equal(service.requests.length, 0)
+  } finally {
+    await service.close()
+  }
+})
+
+test('checkout rejects a response without a Stripe URL', async () => {
+  const service = await startFakeEvalService({
+    route: (request) =>
+      request.url === '/v1/billing/checkout' ? { status: 200, body: { id: 'cs_missing_url' } } : undefined,
+  })
+  try {
+    const client = new EvalGuardrailsClient({ apiKey: 'eval_test', baseUrl: service.url })
+    await assert.rejects(() => client.checkout('p5000'), (error) => {
+      assert.ok(error instanceof EvalTransportError)
+      assert.match(error.message, /no Stripe Checkout URL/)
+      return true
+    })
+  } finally {
+    await service.close()
   }
 })

@@ -173,6 +173,46 @@ test('CLI login writes a mode-600 config; credits and doctor exercise the CLI', 
   }
 })
 
+test('CLI login without --token uses the GitHub device flow', async () => {
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-cli-device-'))
+  const requests = []
+  try {
+    const fakeFetch = async (url) => {
+      requests.push(String(url))
+      if (String(url).endsWith('/v1/auth/device')) {
+        return new Response(
+          JSON.stringify({
+            device_code: 'device-1',
+            user_code: 'ABCD-EFGH',
+            verification_uri: 'https://github.com/login/device',
+            interval: 0,
+            expires_in: 60,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      if (String(url).endsWith('/v1/auth/device/token')) {
+        return new Response(JSON.stringify({ apiKey: 'eval_device_flow', login: 'tester', credits: 250 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ error: 'not found' }), { status: 404 })
+    }
+    const login = capture()
+    const code = await runCli(['login'], { ...login.io, env: {}, home, cwd, fetch: fakeFetch })
+    assert.equal(code, 0)
+    assert.deepEqual(requests, ['https://eval.seanbehan.ca/v1/auth/device', 'https://eval.seanbehan.ca/v1/auth/device/token'])
+    assert.match(login.stdout(), /Enter code: ABCD-EFGH/)
+    const configPath = join(home, '.config', 'eval-jev', 'config.json')
+    assert.equal(JSON.parse(readFileSync(configPath, 'utf8')).apiKey, 'eval_device_flow')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
 test('CLI rejects unknown commands and missing key on credits', async () => {
   const home = tempHome()
   const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-cli2-'))
@@ -185,6 +225,113 @@ test('CLI rejects unknown commands and missing key on credits', async () => {
     assert.equal(await runCli(['credits'], { ...credits.io, env: {}, home, cwd }), 1)
     assert.match(credits.stderr(), /EVAL_API_KEY/)
   } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('CLI buy posts the pack, prints the Stripe URL, and honors --open/--json', async () => {
+  const service = await startFakeEvalService()
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-cli-buy-'))
+  try {
+    const env = { EVAL_API_KEY: 'eval_test', EVAL_BASE_URL: service.url }
+    const opened = []
+    const buy = capture()
+    const buyCode = await runCli(['buy', '--pack', 'p5000', '--open'], {
+      ...buy.io,
+      env,
+      home,
+      cwd,
+      openExternal: (url) => opened.push(url),
+    })
+    assert.equal(buyCode, 0)
+    assert.match(buy.stdout(), /Stripe Checkout URL: https:\/\/checkout\.stripe\.test\/session\/p5000/)
+    assert.match(buy.stdout(), /Checkout session: cs_test_p5000/)
+    assert.deepEqual(opened, ['https://checkout.stripe.test/session/p5000'])
+
+    const request = service.requests.at(-1)
+    assert.equal(request.method, 'POST')
+    assert.equal(request.url, '/v1/billing/checkout')
+    assert.equal(request.headers.authorization, 'Bearer eval_test')
+    assert.deepEqual(request.body, { pack: 'p5000' })
+
+    const json = capture()
+    const jsonCode = await runCli(['buy', '--pack', 'p25000', '--json'], { ...json.io, env, home, cwd })
+    assert.equal(jsonCode, 0)
+    const parsed = JSON.parse(json.stdout())
+    assert.equal(parsed.id, 'cs_test_p25000')
+    assert.equal(parsed.url, 'https://checkout.stripe.test/session/p25000')
+    assert.equal(service.requests.length, 2)
+  } finally {
+    await service.close()
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('CLI buy rejects an invalid or missing --pack with exit 2 before calling the service', async () => {
+  const service = await startFakeEvalService()
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-cli-buy-bad-'))
+  try {
+    const env = { EVAL_API_KEY: 'eval_test', EVAL_BASE_URL: service.url }
+    const invalid = capture()
+    assert.equal(await runCli(['buy', '--pack', 'p1'], { ...invalid.io, env, home, cwd }), 2)
+    assert.match(invalid.stderr(), /--pack must be one of p5000, p25000, p100000, p500000/)
+    assert.match(invalid.stderr(), /p1/)
+
+    const missing = capture()
+    assert.equal(await runCli(['buy'], { ...missing.io, env, home, cwd }), 2)
+    assert.match(missing.stderr(), /--pack/)
+
+    assert.equal(service.requests.length, 0)
+  } finally {
+    await service.close()
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('doctor suggests eval-jev buy when credits are low without changing exit semantics', async () => {
+  const service = await startFakeEvalService()
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-doctor-low-'))
+  try {
+    const env = { EVAL_API_KEY: 'eval_test', EVAL_BASE_URL: service.url }
+    const report = await runDoctor({ env, home, cwd })
+    assert.equal(report.ok, true)
+    const serviceCheck = report.checks.find((check) => check.name === 'service')
+    assert.equal(serviceCheck.status, 'ok')
+    assert.match(serviceCheck.detail, /remaining 37/)
+    assert.match(serviceCheck.detail, /eval-jev buy --pack p5000/)
+
+    const cli = capture()
+    const code = await runCli(['doctor'], { ...cli.io, env, home, cwd })
+    assert.equal(code, 0)
+    assert.match(cli.stdout(), /eval-jev buy --pack p5000/)
+  } finally {
+    await service.close()
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('doctor omits the buy suggestion when the balance is healthy', async () => {
+  const service = await startFakeEvalService({
+    route: (request) =>
+      request.url === '/v1/credits' ? { status: 200, body: { remaining: 5000, total: 5000 } } : undefined,
+  })
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-doctor-healthy-'))
+  try {
+    const report = await runDoctor({ env: { EVAL_API_KEY: 'eval_test', EVAL_BASE_URL: service.url }, home, cwd })
+    assert.equal(report.ok, true)
+    const serviceCheck = report.checks.find((check) => check.name === 'service')
+    assert.equal(serviceCheck.status, 'ok')
+    assert.doesNotMatch(serviceCheck.detail, /eval-jev buy/)
+  } finally {
+    await service.close()
     rmSync(home, { recursive: true, force: true })
     rmSync(cwd, { recursive: true, force: true })
   }
