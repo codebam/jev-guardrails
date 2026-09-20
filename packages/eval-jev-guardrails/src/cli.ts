@@ -290,7 +290,7 @@ async function deviceFlowLogin(baseUrl: string, io: CliIO): Promise<string | und
     const response = await fetchImpl(`${baseUrl}/v1/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ client_id: 'eval-jev-cli', scope: 'read:user user:email' }),
+      body: JSON.stringify({ scope: 'read:user user:email' }),
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) return undefined
@@ -317,7 +317,7 @@ async function deviceFlowLogin(baseUrl: string, io: CliIO): Promise<string | und
       const response = await fetchImpl(`${baseUrl}/v1/auth/device/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ client_id: 'eval-jev-cli', device_code: deviceCode, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }),
+        body: JSON.stringify({ device_code: deviceCode, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }),
         signal: AbortSignal.timeout(10_000),
       })
       const parsed = (await response.json()) as Record<string, unknown>
