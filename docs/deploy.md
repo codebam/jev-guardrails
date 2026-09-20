@@ -47,25 +47,56 @@ Non-secret `[vars]` in `wrangler.toml`:
 
 Create a GitHub **OAuth App** under Sean Behan's account:
 
-- Homepage: `https://eval.seanbehan.ca`
-- Authorization callback URL: `https://eval.seanbehan.ca` (unused by device
-  flow, but required by GitHub)
+- Application name: `Sean Behan Eval Guardrails`
+- Homepage URL: `https://eval.seanbehan.ca`
+- Authorization callback URL: `https://eval.seanbehan.ca` — required by the
+  GitHub form but **not used by device flow**. (If a future browser OAuth
+  route is added, use `https://eval.seanbehan.ca/auth/github/callback`.)
 - **Enable Device Flow: yes**
 
 Copy the **Client ID** into `GITHUB_CLIENT_ID`. No client secret is needed for
-the device flow. `eval-jev login` uses `POST /v1/auth/device` and
-`POST /v1/auth/device/token`; first login creates the account and returns an
-`eval_...` key.
+the device flow. The CLI requests the `read:user user:email` scope, and the
+service defaults to the same scope when the caller omits one. `eval-jev login`
+uses `POST /v1/auth/device` and `POST /v1/auth/device/token`; first login
+creates the account and returns an `eval_...` key.
+
+For local development, either use the same app (the callback is ignored by
+device flow) or create a second OAuth App whose callback is
+`http://127.0.0.1:8787`.
 
 ## 4. Stripe products
 
 Create four one-time Prices in `docs/pricing.md` amounts (CA$15 / CA$59 /
 CA$199 / CA$799) and copy each price id into the matching `STRIPE_PRICE_*`
-var. Add a webhook endpoint:
+var.
+
+**Stripe webhook:**
 
 - URL: `https://eval.seanbehan.ca/stripe/webhook`
-- Event: `checkout.session.completed`
+- Event to listen for: **`checkout.session.completed` only**.
 - Copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+- The Worker grants credits exactly once from this event. Do not grant from
+  `payment_intent.succeeded` or from the browser redirect.
+
+**Checkout success/cancel URLs** are built by the service from
+`EVAL_PUBLIC_URL`; they are browser redirects, not webhooks:
+
+- success: `<EVAL_PUBLIC_URL>/?checkout=success&session_id={CHECKOUT_SESSION_ID}`
+- cancel: `<EVAL_PUBLIC_URL>/?checkout=cancelled`
+
+For example with `EVAL_PUBLIC_URL=https://eval.seanbehan.ca`, Checkout sends
+buyers back to `https://eval.seanbehan.ca/?checkout=success&session_id=...`
+after payment. Nothing needs to be configured in the Stripe dashboard for
+those URLs.
+
+For local development:
+
+```bash
+stripe listen --forward-to http://127.0.0.1:8787/stripe/webhook
+```
+
+Use the `whsec_...` printed by the Stripe CLI as `STRIPE_WEBHOOK_SECRET`, and
+set `EVAL_PUBLIC_URL=http://127.0.0.1:8787`.
 
 ## 5. Deploy
 

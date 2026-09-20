@@ -290,7 +290,7 @@ async function deviceFlowLogin(baseUrl: string, io: CliIO): Promise<string | und
     const response = await fetchImpl(`${baseUrl}/v1/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ client_id: 'eval-jev-cli', scope: 'eval' }),
+      body: JSON.stringify({ client_id: 'eval-jev-cli', scope: 'read:user user:email' }),
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) return undefined

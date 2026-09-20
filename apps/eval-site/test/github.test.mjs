@@ -79,7 +79,7 @@ test('device start defaults to GITHUB_CLIENT_ID and rejects mismatches', async (
 
   const noClient = await callApi(app, env, 'POST', '/v1/auth/device', { body: {} })
   assert.equal(noClient.status, 200)
-  assert.deepEqual(github.calls[0].body, { client_id: 'client_env' })
+  assert.deepEqual(github.calls[0].body, { client_id: 'client_env', scope: 'read:user user:email' })
 
   const mismatch = await callApi(app, env, 'POST', '/v1/auth/device', {
     body: { client_id: 'someone_else' },

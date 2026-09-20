@@ -632,7 +632,7 @@ async function handleGithubDeviceStart(context: RequestContext): Promise<Respons
   const { request, env, github } = context
   const body = await readJsonObject(request)
   const clientId = resolveGithubClientOrThrow(env, body.client_id)
-  const scope = optionalString(body.scope)
+  const scope = optionalString(body.scope) ?? 'read:user user:email'
   const payload = await github.startDevice(clientId, scope)
   return json(payload, 200)
 }
