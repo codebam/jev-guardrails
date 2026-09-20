@@ -19,6 +19,8 @@ import type {
   EvalStore,
   FinishEvaluationInput,
   LedgerEntryInput,
+  ProcessStripeEventInput,
+  ProcessStripeEventResult,
   ReserveInput,
   StartEvaluationInput,
 } from './types.js'
@@ -35,6 +37,7 @@ interface AuthJoinRow {
   key_revoked_at: number | null
   account_email: string | null
   account_display_name: string | null
+  account_github_id: string | null
   account_github_login: string | null
   account_plan: string
   credit_micros: number
@@ -46,6 +49,7 @@ interface AccountRow {
   id: string
   email: string | null
   display_name: string | null
+  github_id: string | null
   github_login: string | null
   plan: string
   credit_micros: number
@@ -64,7 +68,7 @@ interface CachedRow {
   created_at: number
 }
 
-const ACCOUNT_COLUMNS = `id, email, display_name, github_login, plan, credit_micros, created_at, updated_at`
+const ACCOUNT_COLUMNS = `id, email, display_name, github_id, github_login, plan, credit_micros, created_at, updated_at`
 
 /** Normalize a stored plan string, tolerating older rows. */
 function planFrom(value: string | null | undefined): CreditPlan {
@@ -76,6 +80,7 @@ function mapAccount(row: AccountRow): Account {
     id: row.id,
     email: row.email,
     displayName: row.display_name,
+    githubId: row.github_id,
     githubLogin: row.github_login,
     plan: planFrom(row.plan),
     creditMicros: row.credit_micros,
@@ -105,6 +110,7 @@ function authFrom(row: AuthJoinRow): AuthRecord {
       id: row.key_user_id,
       email: row.account_email,
       displayName: row.account_display_name,
+      githubId: row.account_github_id,
       githubLogin: row.account_github_login,
       plan: planFrom(row.account_plan),
       creditMicros: row.credit_micros,
@@ -137,6 +143,7 @@ export class D1Store implements EvalStore {
            k.revoked_at    AS key_revoked_at,
            u.email         AS account_email,
            u.display_name  AS account_display_name,
+           u.github_id     AS account_github_id,
            u.github_login  AS account_github_login,
            u.plan          AS account_plan,
            u.credit_micros AS credit_micros,
@@ -158,16 +165,27 @@ export class D1Store implements EvalStore {
   async createAccount(input: CreateAccountInput): Promise<Account> {
     await this.db
       .prepare(
-        `INSERT INTO users (id, email, display_name, plan, credit_micros, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO users
+           (id, email, display_name, github_id, github_login, plan, credit_micros, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
       )
-      .bind(input.id, input.email, input.displayName, input.plan, input.now, input.now)
+      .bind(
+        input.id,
+        input.email,
+        input.displayName,
+        input.githubId ?? null,
+        input.githubLogin ?? null,
+        input.plan,
+        input.now,
+        input.now,
+      )
       .run()
     return {
       id: input.id,
       email: input.email,
       displayName: input.displayName,
-      githubLogin: null,
+      githubId: input.githubId ?? null,
+      githubLogin: input.githubLogin ?? null,
       plan: input.plan,
       creditMicros: 0,
       createdAt: input.now,
@@ -179,6 +197,14 @@ export class D1Store implements EvalStore {
     const row = await this.db
       .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE lower(email) = lower(?)`)
       .bind(email)
+      .first<AccountRow>()
+    return row === null ? null : mapAccount(row)
+  }
+
+  async findAccountByGithubId(githubId: string): Promise<Account | null> {
+    const row = await this.db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE github_id = ?`)
+      .bind(githubId)
       .first<AccountRow>()
     return row === null ? null : mapAccount(row)
   }
@@ -297,6 +323,60 @@ export class D1Store implements EvalStore {
     }
     params.push(input.id)
     await this.db.prepare(`UPDATE evaluations SET ${sets.join(', ')} WHERE id = ?`).bind(...params).run()
+  }
+
+  async processStripeEvent(input: ProcessStripeEventInput): Promise<ProcessStripeEventResult> {
+    // One D1 batch is one transaction. `INSERT OR IGNORE` makes the event id
+    // the idempotency key; the user update and ledger insert are guarded by
+    // the event still being 'pending', so a duplicate delivery is a no-op.
+    const results = await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO stripe_events
+             (id, type, session_id, user_id, credits_micros, status, created_at, processed_at)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL)`,
+        )
+        .bind(
+          input.eventId,
+          input.eventType,
+          input.sessionId,
+          input.userId,
+          input.creditsMicros,
+          input.now,
+        ),
+      this.db
+        .prepare(
+          `UPDATE users SET credit_micros = credit_micros + ?, updated_at = ?
+           WHERE id = ?
+             AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND status = 'pending')`,
+        )
+        .bind(input.creditsMicros, input.now, input.userId, input.eventId),
+      this.db
+        .prepare(
+          `INSERT INTO credit_ledger
+             (id, user_id, evaluation_id, kind, amount_micros, balance_after_micros, note, created_at)
+           SELECT ?, ?, NULL, 'grant', ?, credit_micros, ?, ?
+           FROM users
+           WHERE id = ?
+             AND EXISTS (SELECT 1 FROM stripe_events WHERE id = ? AND status = 'pending')`,
+        )
+        .bind(
+          `stripe_${input.eventId}`,
+          input.userId,
+          input.creditsMicros,
+          input.note ?? `Stripe credit grant ${input.eventId}`,
+          input.now,
+          input.userId,
+          input.eventId,
+        ),
+      this.db
+        .prepare(
+          `UPDATE stripe_events SET status = 'processed', processed_at = ?
+           WHERE id = ? AND status = 'pending'`,
+        )
+        .bind(input.now, input.eventId),
+    ])
+    return { granted: (results[1]?.meta?.changes ?? 0) > 0 }
   }
 
   async findCachedEvaluation(input: {

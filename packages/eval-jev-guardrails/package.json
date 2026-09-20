@@ -15,14 +15,14 @@
   ],
   "license": "MIT",
   "author": "Sean Behan (codebam)",
-  "homepage": "https://github.com/codebam/dsh-jev-guardrails#readme",
+  "homepage": "https://github.com/codebam/jev-guardrails#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codebam/dsh-jev-guardrails.git",
+    "url": "git+https://github.com/codebam/jev-guardrails.git",
     "directory": "packages/eval-jev-guardrails"
   },
   "bugs": {
-    "url": "https://github.com/codebam/dsh-jev-guardrails/issues"
+    "url": "https://github.com/codebam/jev-guardrails/issues"
   },
   "type": "module",
   "main": "./dist/index.js",

@@ -1,5 +1,5 @@
 /** Shared fakes for eval-site tests: memory store, mocked fetch, and SQLite D1. */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { sha256Hex } from '../dist/crypto.js'
 
 export const CREDIT_MICROS = 1_000_000
@@ -11,6 +11,7 @@ export class MemoryStore {
     this.keysByHash = new Map()
     this.ledger = []
     this.evaluations = []
+    this.stripeEvents = new Map()
   }
 
   async findApiKeyByHash(keyHash) {
@@ -32,7 +33,8 @@ export class MemoryStore {
       id: input.id,
       email: input.email,
       displayName: input.displayName,
-      githubLogin: null,
+      githubId: input.githubId ?? null,
+      githubLogin: input.githubLogin ?? null,
       plan: input.plan,
       creditMicros: 0,
       createdAt: input.now,
@@ -52,6 +54,13 @@ export class MemoryStore {
   async getAccount(userId) {
     const account = this.accounts.get(userId)
     return account === undefined ? null : { ...account }
+  }
+
+  async findAccountByGithubId(githubId) {
+    for (const account of this.accounts.values()) {
+      if (account.githubId === githubId) return { ...account }
+    }
+    return null
   }
 
   async createApiKey(input) {
@@ -107,6 +116,34 @@ export class MemoryStore {
       createdAt: input.now,
     })
     return { ok: true, balanceMicros: account.creditMicros }
+  }
+
+  async processStripeEvent(input) {
+    if (this.stripeEvents.has(input.eventId)) return { granted: false }
+    this.stripeEvents.set(input.eventId, {
+      id: input.eventId,
+      type: input.eventType,
+      sessionId: input.sessionId,
+      userId: input.userId,
+      creditsMicros: input.creditsMicros,
+      status: 'processed',
+      createdAt: input.now,
+      processedAt: input.now,
+    })
+    const account = this.accounts.get(input.userId)
+    if (account === undefined) return { granted: false }
+    account.creditMicros += input.creditsMicros
+    account.updatedAt = input.now
+    this.ledger.push({
+      userId: input.userId,
+      evaluationId: null,
+      kind: 'grant',
+      amountMicros: input.creditsMicros,
+      balanceAfterMicros: account.creditMicros,
+      note: input.note ?? null,
+      createdAt: input.now,
+    })
+    return { granted: true }
   }
 
   async startEvaluation(input) {
@@ -177,6 +214,7 @@ export async function seedKey(store, options = {}) {
     id: userId,
     email,
     displayName: null,
+    githubId: null,
     githubLogin: null,
     plan,
     creditMicros: Math.round(credits * CREDIT_MICROS),
@@ -394,9 +432,14 @@ export async function createSqliteD1() {
   try {
     const { DatabaseSync } = await import('node:sqlite')
     const db = new DatabaseSync(':memory:')
-    const migration = readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8')
+    const migrationsUrl = new URL('../migrations/', import.meta.url)
+    const migrations = readdirSync(migrationsUrl)
+      .filter((file) => file.endsWith('.sql'))
+      .sort()
     db.exec('PRAGMA foreign_keys = ON')
-    db.exec(migration)
+    for (const file of migrations) {
+      db.exec(readFileSync(new URL(file, migrationsUrl), 'utf8'))
+    }
     return { d1: new SqliteD1(db), db }
   } catch (error) {
     if (error?.code === 'ERR_UNKNOWN_BUILTIN_MODULE' || error?.code === 'ERR_MODULE_NOT_FOUND') return null

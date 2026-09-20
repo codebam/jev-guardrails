@@ -85,8 +85,9 @@ npx -y @codebam/eval-jev-guardrails install opencode
 npx -y @codebam/eval-jev-guardrails doctor opencode
 ```
 
-Start with the [installation guides](docs/install/README.md) and the
-[pricing model](docs/pricing.md). The service starts with 250 free credits
+Start with the [installation guides](docs/install/README.md), the
+[pricing model](docs/pricing.md), the [threat model](docs/threat-model.md), and the
+[deployment runbook](docs/deploy.md). The service starts with 250 free credits
 after GitHub login; larger packs are priced to cover worst-case provider and
 hosting cost at every size.
 

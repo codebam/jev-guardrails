@@ -8,6 +8,8 @@
 import type { Battery, GuardSide, GuardVerdict } from '@codebam/jev-guardrails'
 import { constantTimeEqual, generateApiKey, newId, sha256Hex } from './crypto.js'
 import { D1Store } from './d1-store.js'
+import { createGithubClient, GithubError, resolveGithubClientId } from './github.js'
+import type { GithubClient } from './github.js'
 import {
   createDecisionsCaller,
   isRecord,
@@ -17,6 +19,15 @@ import {
   validateAnswers,
 } from './provider.js'
 import type { DecisionsCaller } from './provider.js'
+import {
+  createStripeClient,
+  isStripePack,
+  parseStripeEvent,
+  STRIPE_PACKS,
+  StripeError,
+  verifyStripeSignature,
+} from './stripe.js'
+import type { StripeClient } from './stripe.js'
 import {
   allBatteries,
   batteryForSide,
@@ -83,30 +94,28 @@ export class HttpError extends Error {
 /** Build the Worker. */
 export function createApp(options: AppOptions = {}): EvalWorker {
   const now = options.now ?? (() => Date.now())
-  const decisions = createDecisionsCaller(options.fetch ?? globalThis.fetch.bind(globalThis))
+  const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
+  const decisions = createDecisionsCaller(fetchImpl)
+  const github = createGithubClient(fetchImpl)
+  const stripe = createStripeClient(fetchImpl)
   const cacheTtlOverride = options.cacheTtlMs
 
   return {
     async fetch(request: Request, env: Env): Promise<Response> {
       try {
         const store = options.store ?? storeFor(env)
+        const context: RequestContext = { request, env, store, decisions, github, stripe, now }
         const path = normalizePath(new URL(request.url).pathname)
         switch (path) {
           case '/v1/evaluate':
             return request.method === 'POST'
               ? await handleEvaluate({
-                  request,
-                  env,
-                  store,
-                  decisions,
-                  now,
+                  ...context,
                   cacheTtlMs: cacheTtlOverride ?? cacheTtlFromEnv(env),
                 })
               : methodNotAllowed('POST')
           case '/v1/systemone':
-            return request.method === 'POST'
-              ? await handleSystemOne({ request, env, store, decisions, now })
-              : methodNotAllowed('POST')
+            return request.method === 'POST' ? await handleSystemOne(context) : methodNotAllowed('POST')
           case '/v1/me':
             return request.method === 'GET' ? await handleMe(request, env, store, now) : methodNotAllowed('GET')
           case '/v1/credits':
@@ -117,12 +126,28 @@ export function createApp(options: AppOptions = {}): EvalWorker {
             return request.method === 'POST'
               ? await handleAdminKeys(request, env, store, now)
               : methodNotAllowed('POST')
+          case '/v1/auth/device':
+            return request.method === 'POST' ? await handleGithubDeviceStart(context) : methodNotAllowed('POST')
+          case '/v1/auth/device/token':
+            return request.method === 'POST' ? await handleGithubDeviceToken(context) : methodNotAllowed('POST')
+          case '/v1/billing/checkout':
+            return request.method === 'POST' ? await handleCheckout(context) : methodNotAllowed('POST')
+          case '/stripe/webhook':
+            return request.method === 'POST' ? await handleStripeWebhook(context) : methodNotAllowed('POST')
           default:
             return errorResponse(404, 'not_found', `No route for ${path}.`)
         }
       } catch (error) {
         if (error instanceof HttpError) {
           return errorResponse(error.status, error.code, error.message)
+        }
+        if (error instanceof GithubError) {
+          const status = error.status >= 400 && error.status <= 599 ? error.status : 502
+          return errorResponse(status, 'github_error', error.message)
+        }
+        if (error instanceof StripeError) {
+          const status = error.status >= 400 && error.status <= 599 ? error.status : 502
+          return errorResponse(status, 'stripe_error', error.message)
         }
         console.error('eval-site: unhandled error', error)
         return errorResponse(500, 'internal_error', 'The service hit an unexpected error.')
@@ -149,6 +174,8 @@ interface RequestContext {
   env: Env
   store: EvalStore
   decisions: DecisionsCaller
+  github: GithubClient
+  stripe: StripeClient
   now: () => number
 }
 
@@ -599,6 +626,182 @@ async function handleAdminKeys(request: Request, env: Env, store: EvalStore, now
     credits: creditsDto(account.creditMicros, effectivePlan),
   }
   return json(response, 201)
+}
+
+async function handleGithubDeviceStart(context: RequestContext): Promise<Response> {
+  const { request, env, github } = context
+  const body = await readJsonObject(request)
+  const clientId = resolveGithubClientOrThrow(env, body.client_id)
+  const scope = optionalString(body.scope)
+  const payload = await github.startDevice(clientId, scope)
+  return json(payload, 200)
+}
+
+async function handleGithubDeviceToken(context: RequestContext): Promise<Response> {
+  const { request, env, store, github, now } = context
+  const body = await readJsonObject(request)
+  const clientId = resolveGithubClientOrThrow(env, body.client_id)
+  const deviceCode = requiredString(body.device_code, 'device_code')
+  const grantType = optionalString(body.grant_type) ?? 'urn:ietf:params:oauth:grant-type:device_code'
+
+  const exchange = await github.exchangeDeviceCode({ clientId, deviceCode, grantType })
+  // Polling states are returned verbatim with HTTP 200 so the CLI keeps polling.
+  if (exchange.oauthError !== null) return json(exchange.oauthError, 200)
+  if (exchange.accessToken === null) {
+    throw new HttpError(502, 'github_error', 'GitHub token exchange returned no access token.')
+  }
+
+  const identity = await github.fetchIdentity(exchange.accessToken)
+  let account = await store.findAccountByGithubId(identity.githubId)
+  let created = false
+  if (account === null) {
+    // Never steal an existing account by email; a verified GitHub email that
+    // is already attached elsewhere is dropped so github_id stays the key.
+    let email = identity.email
+    if (email !== null && (await store.findAccountByEmail(email)) !== null) email = null
+    account = await store.createAccount({
+      id: newId('user'),
+      email,
+      displayName: identity.displayName,
+      githubId: identity.githubId,
+      githubLogin: identity.login,
+      plan: 'standard',
+      now: now(),
+    })
+    created = true
+  }
+
+  if (created) {
+    const freeCredits = freeCreditsFromEnv(env)
+    if (freeCredits > 0) {
+      const granted = await store.applyLedgerEntry({
+        userId: account.id,
+        amountMicros: creditsToMicros(freeCredits),
+        kind: 'grant',
+        note: 'GitHub signup free credits',
+        now: now(),
+      })
+      account = { ...account, creditMicros: granted.balanceMicros }
+    }
+  }
+
+  const { token, prefix, hashPromise } = generateApiKey()
+  await store.createApiKey({
+    id: newId('key'),
+    userId: account.id,
+    name: `github:${identity.login}`,
+    keyPrefix: prefix,
+    keyHash: await hashPromise,
+    plan: null,
+    now: now(),
+  })
+  return json(
+    { apiKey: token, login: identity.login, credits: account.creditMicros / CREDIT_MICROS },
+    200,
+  )
+}
+
+async function handleCheckout(context: RequestContext): Promise<Response> {
+  const { request, env, store, stripe, now } = context
+  const auth = await authenticate(request, store, now())
+  const body = await readJsonObject(request)
+  if (!isStripePack(body.pack)) {
+    throw new HttpError(400, 'invalid_pack', 'pack must be one of p5000, p25000, p100000, p500000.')
+  }
+  const session = await stripe.createCheckoutSession(env, { userId: auth.account.id, pack: body.pack })
+  return json({ url: session.url, id: session.id }, 200)
+}
+
+async function handleStripeWebhook(context: RequestContext): Promise<Response> {
+  const { request, env, store, now } = context
+  const secret = env.STRIPE_WEBHOOK_SECRET?.trim()
+  if (secret === undefined || secret.length === 0) {
+    throw new HttpError(500, 'webhook_not_configured', 'STRIPE_WEBHOOK_SECRET is not configured.')
+  }
+  const rawBody = await request.text()
+  if (rawBody.length === 0) {
+    throw new HttpError(400, 'invalid_payload', 'Stripe webhook body is empty.')
+  }
+  const valid = await verifyStripeSignature({
+    secret,
+    header: request.headers.get('stripe-signature'),
+    payload: rawBody,
+    nowSeconds: Math.floor(now() / 1000),
+  })
+  if (!valid) {
+    throw new HttpError(400, 'invalid_signature', 'Stripe signature verification failed.')
+  }
+
+  const event = parseStripeEvent(rawBody)
+  if (event === null) {
+    throw new HttpError(400, 'invalid_payload', 'Could not parse the Stripe event.')
+  }
+  if (event.type !== 'checkout.session.completed') {
+    return json({ received: true, ignored: true }, 200)
+  }
+  const paymentStatus = event.object.payment_status
+  if (typeof paymentStatus === 'string' && paymentStatus !== 'paid') {
+    return json({ received: true, ignored: true }, 200)
+  }
+
+  const metadata = isRecord(event.object.metadata) ? event.object.metadata : null
+  const userId = metadata !== null && typeof metadata.userId === 'string' ? metadata.userId : null
+  const credits = metadata === null ? null : parseStripeCredits(metadata.credits, metadata.pack)
+  if (userId === null || credits === null) {
+    console.warn(`eval-site: ignoring Stripe event ${event.id} without usable metadata`)
+    return json({ received: true, ignored: true }, 200)
+  }
+  const account = await store.getAccount(userId)
+  if (account === null) {
+    console.warn(`eval-site: ignoring Stripe event ${event.id} for unknown user`)
+    return json({ received: true, ignored: true }, 200)
+  }
+
+  const sessionId = typeof event.object.id === 'string' ? event.object.id : null
+  const pack = isStripePack(metadata?.pack) ? metadata.pack : 'unknown'
+  const result = await store.processStripeEvent({
+    eventId: event.id,
+    eventType: event.type,
+    sessionId,
+    userId,
+    creditsMicros: creditsToMicros(credits),
+    note: `Stripe credit pack ${pack}`,
+    now: now(),
+  })
+  return json({ received: true, granted: result.granted }, 200)
+}
+
+function resolveGithubClientOrThrow(env: Env, requested: unknown): string {
+  const resolved = resolveGithubClientId(env, requested)
+  if (resolved.error === null) return resolved.clientId
+  if (resolved.error.includes('not configured')) {
+    throw new HttpError(500, 'github_not_configured', resolved.error)
+  }
+  throw new HttpError(400, 'invalid_client_id', resolved.error)
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new HttpError(400, 'invalid_body', `${field} is required.`)
+  }
+  return value.trim()
+}
+
+function freeCreditsFromEnv(env: Env): number {
+  const raw = env.EVAL_FREE_CREDITS?.trim()
+  if (raw === undefined || raw.length === 0) return 250
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 0) return 250
+  return Math.min(parsed, 1_000_000)
+}
+
+function parseStripeCredits(creditsValue: unknown, packValue: unknown): number | null {
+  const credits =
+    typeof creditsValue === 'string' || typeof creditsValue === 'number' ? Number(creditsValue) : Number.NaN
+  if (!Number.isInteger(credits) || credits <= 0 || credits > 1_000_000) return null
+  if (!isStripePack(packValue)) return null
+  if (STRIPE_PACKS[packValue] !== credits) return null
+  return credits
 }
 
 let batteryHashIndex: Promise<Map<string, Battery>> | undefined

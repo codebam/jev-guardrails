@@ -1,5 +1,5 @@
 {
-  "name": "dsh-jev-guardrails",
+  "name": "jev-guardrails",
   "version": "0.1.0",
   "private": true,
   "description": "Jev-backed guardrails and verification for LLM apps, plus a thin DeepSeek Harness plugin.",

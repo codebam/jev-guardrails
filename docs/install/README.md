@@ -23,7 +23,10 @@ npx -y @codebam/eval-jev-guardrails install opencode
 npx -y @codebam/eval-jev-guardrails install hermes
 npx -y @codebam/eval-jev-guardrails install dsh --profile web
 
-# 3. prove the hook is live
+# 3. add credits when needed
+npx -y @codebam/eval-jev-guardrails buy --pack p5000 --open
+
+# 4. prove the hook is live
 npx -y @codebam/eval-jev-guardrails doctor opencode
 ```
 
@@ -40,4 +43,4 @@ npx -y @codebam/eval-jev-guardrails doctor opencode
 | `support` | deny, return the Jev reason to the model |
 
 One tool call costs one credit. Failed provider calls are refunded by the
-service. See [pricing](../pricing.md) for packs and limits.
+service. See [pricing](../pricing.md) and the [threat model](../threat-model.md) for packs and limits.

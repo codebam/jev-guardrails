@@ -4,7 +4,7 @@ import { createApp } from '../dist/app.js'
 import { sha256Hex } from '../dist/crypto.js'
 import { callApi, createSqliteD1, makeEnv, makeUpstream } from './helpers.mjs'
 
-test('migration 0001 creates the schema and indexes', async (t) => {
+test('migrations create the schema and indexes', async (t) => {
   const sqlite = await createSqliteD1()
   if (sqlite === null) {
     t.skip('node:sqlite is unavailable on this Node version')
@@ -14,7 +14,7 @@ test('migration 0001 creates the schema and indexes', async (t) => {
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
     .all()
     .map((row) => row.name)
-  assert.deepEqual(tables, ['api_keys', 'credit_ledger', 'evaluations', 'users'])
+  assert.deepEqual(tables, ['api_keys', 'credit_ledger', 'evaluations', 'stripe_events', 'users'])
 
   const indexes = sqlite.db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
@@ -25,11 +25,14 @@ test('migration 0001 creates the schema and indexes', async (t) => {
     'idx_credit_ledger_user_created',
     'idx_evaluations_cache',
     'idx_evaluations_user_created',
+    'idx_stripe_events_session',
+    'idx_stripe_events_user',
+    'idx_users_github_id',
   ]) {
     assert.ok(indexes.includes(expected), `missing index ${expected}`)
   }
 
-  // Migrations are written with IF NOT EXISTS and are safe to re-apply.
+  // 0001 is written with IF NOT EXISTS and is safe to re-apply.
   const migration = (await import('node:fs')).readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8')
   sqlite.db.exec(migration)
 })
@@ -118,6 +121,41 @@ test('D1Store drives admin minting, evaluate credits, cache hits, and degradatio
       ['degraded', 1, 0],
     ],
   )
+})
+
+test('D1Store.processStripeEvent grants each Stripe event exactly once', async (t) => {
+  const sqlite = await createSqliteD1()
+  if (sqlite === null) {
+    t.skip('node:sqlite is unavailable on this Node version')
+    return
+  }
+  const { D1Store } = await import('../dist/d1-store.js')
+  const store = new D1Store(sqlite.d1)
+  const now = 1_700_000_000_000
+  await store.createAccount({ id: 'user_stripe', email: null, displayName: null, plan: 'standard', now })
+
+  const event = {
+    eventId: 'evt_d1_1',
+    eventType: 'checkout.session.completed',
+    sessionId: 'cs_d1_1',
+    userId: 'user_stripe',
+    creditsMicros: 5_000_000,
+    note: 'Stripe credit pack p5000',
+    now,
+  }
+  const first = await store.processStripeEvent(event)
+  assert.deepEqual(first, { granted: true })
+  const duplicate = await store.processStripeEvent(event)
+  assert.deepEqual(duplicate, { granted: false })
+
+  const account = await store.getAccount('user_stripe')
+  assert.equal(account.creditMicros, 5_000_000)
+  const ledger = sqlite.db.prepare('SELECT kind, amount_micros, balance_after_micros FROM credit_ledger').all()
+  assert.deepEqual(ledger.map((row) => [row.kind, row.amount_micros, row.balance_after_micros]), [
+    ['grant', 5_000_000, 5_000_000],
+  ])
+  const events = sqlite.db.prepare('SELECT id, status FROM stripe_events').all()
+  assert.deepEqual(events.map((row) => [row.id, row.status]), [['evt_d1_1', 'processed']])
 })
 
 test('D1Store refuses a debit that exceeds the balance and keeps the ledger consistent', async (t) => {

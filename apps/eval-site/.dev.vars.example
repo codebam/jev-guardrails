@@ -2,3 +2,19 @@
 OPENROUTER_API_KEY=replace-with-your-openrouter-key
 EVAL_ADMIN_TOKEN=replace-with-a-long-random-bootstrap-token
 OPENROUTER_MODEL=~typesafe/jev-latest
+
+# GitHub device flow. Public OAuth app client id only; the device flow does
+# not use or store a client secret.
+GITHUB_CLIENT_ID=replace-with-your-github-oauth-app-client-id
+# Free credits granted once, on first GitHub login. Defaults to 250.
+EVAL_FREE_CREDITS=250
+
+# Stripe credit packs (docs/pricing.md). Price ids are public identifiers.
+STRIPE_SECRET_KEY=sk_test_replace-me
+STRIPE_WEBHOOK_SECRET=whsec_replace-me
+STRIPE_PRICE_P5000=price_replace-me-5000
+STRIPE_PRICE_P25000=price_replace-me-25000
+STRIPE_PRICE_P100000=price_replace-me-100000
+STRIPE_PRICE_P500000=price_replace-me-500000
+# Public origin used for Checkout success/cancel URLs.
+EVAL_PUBLIC_URL=http://127.0.0.1:8787

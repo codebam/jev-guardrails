@@ -12,9 +12,26 @@ database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
 [vars]
-# Non-secret defaults. Secrets (OPENROUTER_API_KEY, EVAL_ADMIN_TOKEN) are set
-# with `wrangler secret put` or in .dev.vars for local development.
+# Public, non-secret configuration. Git commit is fine for these values.
 OPENROUTER_MODEL = "~typesafe/jev-latest"
+EVAL_FREE_CREDITS = "250"
+EVAL_PUBLIC_URL = "https://eval.seanbehan.ca"
+
+# Public GitHub OAuth app client id. The device flow needs no client secret.
+GITHUB_CLIENT_ID = ""
+
+# Stripe price ids are public identifiers, not secrets. Uncomment and fill in
+# after creating the products in Stripe:
+# STRIPE_PRICE_P5000 = "price_..."
+# STRIPE_PRICE_P25000 = "price_..."
+# STRIPE_PRICE_P100000 = "price_..."
+# STRIPE_PRICE_P500000 = "price_..."
+
+# Secrets are never stored in this file. Set them with:
+#   npx wrangler secret put OPENROUTER_API_KEY
+#   npx wrangler secret put EVAL_ADMIN_TOKEN
+#   npx wrangler secret put STRIPE_SECRET_KEY
+#   npx wrangler secret put STRIPE_WEBHOOK_SECRET
 
 [observability]
 enabled = true

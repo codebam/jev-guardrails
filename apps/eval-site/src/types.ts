@@ -59,6 +59,21 @@ export interface Env {
   OPENROUTER_TIMEOUT_MS?: string
   /** Service-side response-cache TTL in seconds. Defaults to 3600. */
   EVAL_CACHE_TTL_SECONDS?: string
+  /** GitHub OAuth app client id used for the device flow (public, not a secret). */
+  GITHUB_CLIENT_ID?: string
+  /** Free credits granted on first GitHub login. Defaults to 250. */
+  EVAL_FREE_CREDITS?: string
+  /** Stripe secret key used to create Checkout Sessions. */
+  STRIPE_SECRET_KEY?: string
+  /** Stripe webhook signing secret (`whsec_...`). */
+  STRIPE_WEBHOOK_SECRET?: string
+  /** Stripe Price ids for each credit pack. */
+  STRIPE_PRICE_P5000?: string
+  STRIPE_PRICE_P25000?: string
+  STRIPE_PRICE_P100000?: string
+  STRIPE_PRICE_P500000?: string
+  /** Public origin used for Stripe success/cancel URLs. */
+  EVAL_PUBLIC_URL?: string
 }
 
 /** An account as stored in `users`. */
@@ -66,6 +81,7 @@ export interface Account {
   id: string
   email: string | null
   displayName: string | null
+  githubId: string | null
   githubLogin: string | null
   plan: CreditPlan
   creditMicros: number
@@ -100,6 +116,8 @@ export interface CreateAccountInput {
   displayName: string | null
   plan: CreditPlan
   now: number
+  githubId?: string | null
+  githubLogin?: string | null
 }
 
 /** Input for creating an API key. */
@@ -167,6 +185,26 @@ export interface FinishEvaluationInput {
   error?: string
 }
 
+/**
+ * Input for an exactly-once Stripe webhook grant. The event id is the
+ * idempotency key.
+ */
+export interface ProcessStripeEventInput {
+  eventId: string
+  eventType: string
+  sessionId: string | null
+  userId: string
+  creditsMicros: number
+  note?: string
+  now: number
+}
+
+/** Result of processing one Stripe event. */
+export interface ProcessStripeEventResult {
+  /** True only for the delivery that actually applied the grant. */
+  granted: boolean
+}
+
 /** A cached evaluation returned by the store. */
 export interface CachedEvaluation {
   id: string
@@ -181,6 +219,7 @@ export interface EvalStore {
   touchApiKey(apiKeyId: string, at: number): Promise<void>
   createAccount(input: CreateAccountInput): Promise<Account>
   findAccountByEmail(email: string): Promise<Account | null>
+  findAccountByGithubId(githubId: string): Promise<Account | null>
   getAccount(userId: string): Promise<Account | null>
   createApiKey(input: CreateApiKeyInput): Promise<ApiKeyRecord>
   /** Grant/refund/adjust credits with a ledger row. */
@@ -189,6 +228,8 @@ export interface EvalStore {
   reserveCredits(input: ReserveInput): Promise<DebitResult>
   startEvaluation(input: StartEvaluationInput): Promise<void>
   finishEvaluation(input: FinishEvaluationInput): Promise<void>
+  /** Insert + grant in one D1 batch; duplicate event ids are no-ops. */
+  processStripeEvent(input: ProcessStripeEventInput): Promise<ProcessStripeEventResult>
   findCachedEvaluation(input: {
     requestHash: string
     now: number
