@@ -1,6 +1,6 @@
 {
   "name": "@codebam/eval-jev-guardrails",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Client, CLI, and real tool-call hooks for the hosted eval.seanbehan.ca guardrails service (OpenCode, Hermes Agent, DeepSeek Harness).",
   "keywords": [
     "jev",
@@ -65,7 +65,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
-    "check": "npm run typecheck && for f in test/*.mjs test/helpers/*.mjs; do node --check \"$f\" || exit 1; done && python3 -c \"import ast,pathlib; ast.parse(pathlib.Path('templates/hermes/eval-jev-guardrails/__init__.py').read_text(encoding='utf-8'))\""
+    "check": "npm run typecheck && for f in test/*.mjs test/helpers/*.mjs; do node --check \"$f\" || exit 1; done && python3 -c \"import ast,pathlib; ast.parse(pathlib.Path('templates/hermes/eval-jev-guardrails/__init__.py').read_text(encoding='utf-8'))\"",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {},
   "devDependencies": {
