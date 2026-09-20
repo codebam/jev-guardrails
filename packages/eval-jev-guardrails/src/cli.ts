@@ -9,7 +9,7 @@
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline/promises'
-import { EvalGuardrailsClient } from './client.js'
+import { EvalGuardrailsClient, normalizePromotionCode } from './client.js'
 import { maskApiKey, resolveEvalConfig, writeEvalConfig } from './config.js'
 import { runDoctor } from './doctor.js'
 import type { DoctorHarness, DoctorScope } from './doctor.js'
@@ -41,6 +41,7 @@ type InstallHarness = (typeof INSTALL_HARNESSES)[number]
 
 const VALUE_FLAGS = new Set([
   'token',
+  'promo',
   'base-url',
   'config',
   'profile',
@@ -239,13 +240,26 @@ async function commandBuy(parsed: ParsedArgs, io: CliIO): Promise<number> {
     return 2
   }
 
+  const promoFlag = flagString(parsed, 'promo')
+  let promotionCode: string | undefined
+  if (promoFlag !== undefined) {
+    try {
+      promotionCode = normalizePromotionCode(promoFlag)
+    } catch (error) {
+      io.stderr(`eval-jev buy: ${error instanceof Error ? error.message : String(error)}
+
+${usage('buy')}`)
+      return 2
+    }
+  }
+
   const client = new EvalGuardrailsClient({
     env: io.env,
     home: flagString(parsed, 'home') ?? io.home,
     ...(flagString(parsed, 'config') !== undefined ? { configPath: flagString(parsed, 'config') as string } : {}),
     ...(flagString(parsed, 'base-url') !== undefined ? { baseUrl: flagString(parsed, 'base-url') as string } : {}),
   })
-  const checkout = await client.checkout(pack as EvalCreditPack)
+  const checkout = await client.checkout(pack as EvalCreditPack, promotionCode !== undefined ? { promotionCode } : {})
 
   if (parsed.booleans.has('json')) {
     io.stdout(`${JSON.stringify(checkout, null, 2)}\n`)
@@ -458,11 +472,12 @@ supported for CI and for servers where the device flow is unavailable.
 `
   }
   if (command === 'buy') {
-    return `eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--open] [--json]
+    return `eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--promo <code>] [--open] [--json]
 
 Packs: p5000 = 5,000 credits, p25000 = 25,000, p100000 = 100,000,
 p500000 = 500,000. Creates a Stripe Checkout Session and prints its URL.
---open also launches the platform browser opener.
+--promo pre-applies a Stripe promotion code; Stripe Checkout also accepts
+codes interactively by default. --open launches the platform browser opener.
 `
   }
   return `eval-jev ${PACKAGE_VERSION} — hosted eval.seanbehan.ca guardrails
@@ -472,7 +487,7 @@ Usage:
   eval-jev install opencode [--project|--global]
   eval-jev install hermes   [--project|--global]
   eval-jev install dsh      [--profile <name>] [--dsh-home <path>] [--no-install]
-  eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--open] [--json]
+  eval-jev buy --pack <${EVAL_CREDIT_PACKS.join('|')}> [--promo <code>] [--open] [--json]
   eval-jev doctor [opencode|hermes|dsh] [--project|--global] [--offline] [--json]
   eval-jev credits [--json]
   eval-jev version

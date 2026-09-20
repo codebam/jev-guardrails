@@ -74,6 +74,11 @@ export interface Env {
   STRIPE_PRICE_P500000?: string
   /** Public origin used for Stripe success/cancel URLs. */
   EVAL_PUBLIC_URL?: string
+  /**
+   * Set to "false" to stop Checkout from showing its own promotion-code input.
+   * Any other value (or absent) leaves it enabled. Default: true.
+   */
+  EVAL_ALLOW_PROMOTION_CODES?: string
 }
 
 /** An account as stored in `users`. */

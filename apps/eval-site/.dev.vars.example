@@ -18,3 +18,5 @@ STRIPE_PRICE_P100000=price_replace-me-100000
 STRIPE_PRICE_P500000=price_replace-me-500000
 # Public origin used for Checkout success/cancel URLs.
 EVAL_PUBLIC_URL=http://127.0.0.1:8787
+# Let Checkout show its own promotion-code field. Set to false to hide it.
+EVAL_ALLOW_PROMOTION_CODES=true

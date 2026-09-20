@@ -22,7 +22,7 @@ Live base URL: `https://eval.seanbehan.ca`
 | `POST /v1/systemone` | `eval_` key | 1 credit per successful call; 0 for `guard_credits` keys | SystemOne-shaped compatibility endpoint used by the library's `provider: "hosted"`. Only question sets whose canonical hash matches a built-in battery are accepted. |
 | `GET /v1/me` | `eval_` key | free | Authenticated account. |
 | `GET /v1/credits` | `eval_` key | free | Current credit balance and plan. |
-| `POST /v1/billing/checkout` | `eval_` key | free | Create a Stripe Checkout Session for a credit pack. |
+| `POST /v1/billing/checkout` | `eval_` key | free | Create a Stripe Checkout Session for a credit pack, with optional `promotionCode`. |
 | `POST /stripe/webhook` | Stripe signature | free | Verify and process Stripe webhooks; grants pack credits exactly once. |
 | `POST /admin/keys` | `EVAL_ADMIN_TOKEN` as bearer | free | Mint an `eval_` key outside GitHub login. Returns the plaintext token exactly once. |
 
@@ -139,6 +139,27 @@ The Worker creates the session at `https://api.stripe.com/v1/checkout/sessions`
 with `mode=payment`, the pack's price id, `success_url`/`cancel_url` under
 `EVAL_PUBLIC_URL`, and `metadata {userId, credits, pack}`. It returns only
 `{url, id}` to the client.
+
+Checkout sessions also support promotion codes:
+
+- With no `promotionCode` in the request, Checkout shows its own promotion-code
+  input by default (`allow_promotion_codes=true`). Set
+  `EVAL_ALLOW_PROMOTION_CODES=false` to hide that input.
+- With `"promotionCode": "SAVE10"`, the service trims and validates the code
+  (1–64 characters of `A-Z a-z 0-9 _ -`), resolves it via
+  `GET https://api.stripe.com/v1/promotion_codes?code=...&active=true&limit=1`,
+  and sends `discounts[0][promotion_code]=<promotion_code_id>`. Checkout's own
+  input is left off because Stripe rejects combining the two parameters.
+- Unknown, expired, or inactive codes return HTTP 400
+  `invalid_promotion_code`; a lookup transport/non-2xx failure returns HTTP 502
+  `stripe_error` without creating a session.
+
+```bash
+curl -s http://127.0.0.1:8787/v1/billing/checkout \
+  -H "Authorization: Bearer $EVAL_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"pack":"p5000","promotionCode":"SAVE10"}'
+```
 
 Stripe calls `POST /stripe/webhook` with `checkout.session.completed`; the
 Worker verifies the raw body with the `Stripe-Signature` HMAC-SHA256 header
@@ -289,6 +310,7 @@ npm run deploy:dry-run
 | `STRIPE_WEBHOOK_SECRET` | for webhook | — | Secret `whsec_...` signing secret. |
 | `STRIPE_PRICE_P5000` … `STRIPE_PRICE_P500000` | for checkout | — | Public Stripe Price ids for the packs. |
 | `EVAL_PUBLIC_URL` | no | `https://eval.seanbehan.ca` | Origin for Checkout success/cancel URLs. |
+| `EVAL_ALLOW_PROMOTION_CODES` | no | `true` | Set to `false` to hide Checkout's built-in promotion-code input. |
 
 ## Tests and safety
 

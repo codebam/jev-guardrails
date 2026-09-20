@@ -16,6 +16,8 @@ migrations_dir = "migrations"
 OPENROUTER_MODEL = "~typesafe/jev-latest"
 EVAL_FREE_CREDITS = "250"
 EVAL_PUBLIC_URL = "https://eval.seanbehan.ca"
+# Checkout shows its own promotion-code input unless this is "false".
+EVAL_ALLOW_PROMOTION_CODES = "true"
 
 # Public GitHub OAuth app client id. The device flow needs no client secret.
 GITHUB_CLIENT_ID = "Ov23liR6pdTAUotNybDJ"

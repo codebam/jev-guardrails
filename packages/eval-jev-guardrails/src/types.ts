@@ -100,6 +100,15 @@ export const EVAL_CREDIT_PACKS = ['p5000', 'p25000', 'p100000', 'p500000'] as co
 /** One purchasable Stripe credit pack id. */
 export type EvalCreditPack = (typeof EVAL_CREDIT_PACKS)[number]
 
+/** Options for {@link EvalGuardrailsClient.checkout}. */
+export interface EvalCheckoutOptions {
+  /**
+   * Optional Stripe promotion code to pre-apply (e.g. `SAVE10`). When
+   * omitted, Stripe Checkout shows its promotion-code field by default.
+   */
+  promotionCode?: string
+}
+
 /** `POST /v1/billing/checkout` response: a hosted Stripe Checkout Session. */
 export interface EvalCheckoutResponse {
   url: string

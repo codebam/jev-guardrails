@@ -147,7 +147,7 @@ export function createApp(options: AppOptions = {}): EvalWorker {
         }
         if (error instanceof StripeError) {
           const status = error.status >= 400 && error.status <= 599 ? error.status : 502
-          return errorResponse(status, 'stripe_error', error.message)
+          return errorResponse(status, error.code, error.message)
         }
         console.error('eval-site: unhandled error', error)
         return errorResponse(500, 'internal_error', 'The service hit an unexpected error.')
@@ -708,7 +708,15 @@ async function handleCheckout(context: RequestContext): Promise<Response> {
   if (!isStripePack(body.pack)) {
     throw new HttpError(400, 'invalid_pack', 'pack must be one of p5000, p25000, p100000, p500000.')
   }
-  const session = await stripe.createCheckoutSession(env, { userId: auth.account.id, pack: body.pack })
+  const promotionCode = body.promotionCode
+  if (promotionCode !== undefined && promotionCode !== null && typeof promotionCode !== 'string') {
+    throw new HttpError(400, 'invalid_promotion_code', 'promotionCode must be a string.')
+  }
+  const session = await stripe.createCheckoutSession(env, {
+    userId: auth.account.id,
+    pack: body.pack,
+    ...(typeof promotionCode === 'string' ? { promotionCode } : {}),
+  })
   return json({ url: session.url, id: session.id }, 200)
 }
 

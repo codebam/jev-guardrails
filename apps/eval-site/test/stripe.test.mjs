@@ -6,15 +6,27 @@ import { callApi, makeEnv, MemoryStore, seedKey, throwIfCalled } from './helpers
 
 const WEBHOOK_SECRET = 'whsec_test_123'
 
-function makeStripeUpstream() {
+function makeStripeUpstream(options = {}) {
   const calls = []
   const fetch = async (url, init = {}) => {
-    calls.push({
-      url: String(url),
-      method: init.method,
-      headers: new Headers(init.headers ?? {}),
-      form: typeof init.body === 'string' ? new URLSearchParams(init.body) : new URLSearchParams(),
-    })
+    const href = String(url)
+    const method = (init.method ?? 'GET').toUpperCase()
+    const headers = new Headers(init.headers ?? {})
+    const form =
+      method !== 'GET' && typeof init.body === 'string' ? new URLSearchParams(init.body) : new URLSearchParams()
+    calls.push({ url: href, method, headers, form })
+
+    if (href.startsWith('https://api.stripe.com/v1/promotion_codes')) {
+      if (options.promotionLookupError === true) throw new Error('promotion lookup exploded')
+      if (options.promotionLookupStatus !== undefined) {
+        return new Response(
+          JSON.stringify({ error: { message: options.promotionLookupMessage ?? 'lookup failed' } }),
+          { status: options.promotionLookupStatus, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return Response.json(options.promotionCodes ?? { object: 'list', data: [] })
+    }
+
     return Response.json({
       id: 'cs_test_123',
       object: 'checkout.session',
@@ -87,11 +99,122 @@ test('POST /v1/billing/checkout creates a Stripe Checkout Session for a pack', a
   assert.equal(call.form.get('mode'), 'payment')
   assert.equal(call.form.get('line_items[0][price]'), 'price_5000')
   assert.equal(call.form.get('line_items[0][quantity]'), '1')
+  assert.equal(call.form.get('allow_promotion_codes'), 'true')
+  assert.equal(call.form.get('discounts[0][promotion_code]'), null)
   assert.equal(call.form.get('metadata[userId]'), 'user_seed')
   assert.equal(call.form.get('metadata[credits]'), '5000')
   assert.equal(call.form.get('metadata[pack]'), 'p5000')
   assert.ok(call.form.get('success_url').startsWith('https://eval.example/'))
   assert.ok(call.form.get('cancel_url').startsWith('https://eval.example/'))
+})
+
+test('checkout omits allow_promotion_codes when EVAL_ALLOW_PROMOTION_CODES is false', async () => {
+  const store = new MemoryStore()
+  const { token } = await seedKey(store, { credits: 10 })
+  const stripe = makeStripeUpstream()
+  const app = createApp({ store, fetch: stripe.fetch })
+  const response = await callApi(app, stripeEnv({ EVAL_ALLOW_PROMOTION_CODES: 'false' }), 'POST', '/v1/billing/checkout', {
+    token,
+    body: { pack: 'p5000' },
+  })
+  assert.equal(response.status, 200)
+  assert.equal(stripe.calls.length, 1)
+  assert.equal(stripe.calls[0].form.get('allow_promotion_codes'), null)
+  assert.equal(stripe.calls[0].form.get('discounts[0][promotion_code]'), null)
+})
+
+test('checkout resolves a valid promotion code to discounts[0][promotion_code]', async () => {
+  const store = new MemoryStore()
+  const { token } = await seedKey(store, { credits: 10 })
+  const stripe = makeStripeUpstream({
+    promotionCodes: { object: 'list', data: [{ id: 'promo_123', active: true, code: 'SAVE10' }] },
+  })
+  const app = createApp({ store, fetch: stripe.fetch })
+  const response = await callApi(app, stripeEnv(), 'POST', '/v1/billing/checkout', {
+    token,
+    body: { pack: 'p5000', promotionCode: '  SAVE10  ' },
+  })
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, {
+    url: 'https://checkout.stripe.com/c/pay/cs_test_123',
+    id: 'cs_test_123',
+  })
+
+  assert.equal(stripe.calls.length, 2)
+  const lookup = stripe.calls[0]
+  assert.equal(lookup.method, 'GET')
+  assert.equal(lookup.headers.get('authorization'), 'Bearer sk_test_123')
+  const lookupUrl = new URL(lookup.url)
+  assert.equal(`${lookupUrl.origin}${lookupUrl.pathname}`, 'https://api.stripe.com/v1/promotion_codes')
+  assert.equal(lookupUrl.searchParams.get('code'), 'SAVE10')
+  assert.equal(lookupUrl.searchParams.get('active'), 'true')
+  assert.equal(lookupUrl.searchParams.get('limit'), '1')
+  assert.equal(lookup.form.toString(), '')
+
+  const create = stripe.calls[1]
+  assert.equal(create.method, 'POST')
+  assert.equal(create.form.get('discounts[0][promotion_code]'), 'promo_123')
+  assert.equal(create.form.get('allow_promotion_codes'), null)
+  assert.equal(create.form.get('metadata[userId]'), 'user_seed')
+  assert.equal(create.form.get('metadata[credits]'), '5000')
+  assert.equal(create.form.get('metadata[pack]'), 'p5000')
+})
+
+test('checkout returns 400 invalid_promotion_code for unknown codes without a session', async () => {
+  const store = new MemoryStore()
+  const { token } = await seedKey(store, { credits: 10 })
+  const stripe = makeStripeUpstream({ promotionCodes: { object: 'list', data: [] } })
+  const app = createApp({ store, fetch: stripe.fetch })
+  const response = await callApi(app, stripeEnv(), 'POST', '/v1/billing/checkout', {
+    token,
+    body: { pack: 'p5000', promotionCode: 'NOPE' },
+  })
+  assert.equal(response.status, 400)
+  assert.equal(response.body.error.code, 'invalid_promotion_code')
+  assert.equal(stripe.calls.length, 1)
+  assert.equal(stripe.calls[0].method, 'GET')
+})
+
+test('checkout rejects malformed promotion codes before calling Stripe', async () => {
+  const store = new MemoryStore()
+  const { token } = await seedKey(store, { credits: 10 })
+  const stripe = makeStripeUpstream()
+  const app = createApp({ store, fetch: stripe.fetch })
+  for (const promotionCode of ['bad code!', 'x'.repeat(65), '', 42]) {
+    const response = await callApi(app, stripeEnv(), 'POST', '/v1/billing/checkout', {
+      token,
+      body: { pack: 'p5000', promotionCode },
+    })
+    assert.equal(response.status, 400, String(promotionCode))
+    assert.equal(response.body.error.code, 'invalid_promotion_code')
+  }
+  assert.equal(stripe.calls.length, 0)
+})
+
+test('checkout returns 502 stripe_error when the promotion lookup fails', async () => {
+  const store = new MemoryStore()
+  const { token } = await seedKey(store, { credits: 10 })
+
+  const upstreamFailure = makeStripeUpstream({ promotionLookupStatus: 500, promotionLookupMessage: 'provider exploded' })
+  let app = createApp({ store, fetch: upstreamFailure.fetch })
+  let response = await callApi(app, stripeEnv(), 'POST', '/v1/billing/checkout', {
+    token,
+    body: { pack: 'p5000', promotionCode: 'SAVE10' },
+  })
+  assert.equal(response.status, 502)
+  assert.equal(response.body.error.code, 'stripe_error')
+  assert.match(response.body.error.message, /provider exploded/)
+  assert.equal(upstreamFailure.calls.length, 1)
+
+  const transportFailure = makeStripeUpstream({ promotionLookupError: true })
+  app = createApp({ store, fetch: transportFailure.fetch })
+  response = await callApi(app, stripeEnv(), 'POST', '/v1/billing/checkout', {
+    token,
+    body: { pack: 'p5000', promotionCode: 'SAVE10' },
+  })
+  assert.equal(response.status, 502)
+  assert.equal(response.body.error.code, 'stripe_error')
+  assert.equal(transportFailure.calls.length, 1)
 })
 
 test('checkout maps every pack to its Stripe price and credit amount', async () => {

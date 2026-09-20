@@ -27,18 +27,31 @@ export function isStripePack(value: unknown): value is StripePack {
 export class StripeError extends Error {
   readonly status: number
   readonly body: string
+  /** Error-envelope code; defaults to `stripe_error`. */
+  readonly code: string
 
-  constructor(status: number, message: string, body = '') {
+  constructor(status: number, message: string, body = '', code = 'stripe_error') {
     super(message)
     this.name = 'StripeError'
     this.status = status
     this.body = body
+    this.code = code
   }
 }
 
-/** Client contract; injected into the app so tests can mock upstream fetch. */
+/**
+ * Client contract; injected into the app so tests can mock upstream fetch.
+ *
+ * `promotionCode` is the buyer-entered code; when present it is resolved to a
+ * Stripe promotion-code id and passed as an explicit discount. When absent,
+ * Checkout's own promotion-code field is enabled unless
+ * `EVAL_ALLOW_PROMOTION_CODES=false`.
+ */
 export interface StripeClient {
-  createCheckoutSession(env: Env, input: { userId: string; pack: StripePack }): Promise<{ url: string; id: string }>
+  createCheckoutSession(
+    env: Env,
+    input: { userId: string; pack: StripePack; promotionCode?: string },
+  ): Promise<{ url: string; id: string }>
 }
 
 /** Parsed Stripe event used by the webhook. */
@@ -49,7 +62,9 @@ export interface StripeEvent {
 }
 
 const CHECKOUT_SESSIONS_URL = 'https://api.stripe.com/v1/checkout/sessions'
+const PROMOTION_CODES_URL = 'https://api.stripe.com/v1/promotion_codes'
 const DEFAULT_PUBLIC_URL = 'https://eval.seanbehan.ca'
+const PROMOTION_CODE_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
 const PRICE_ENV = {
   p5000: 'STRIPE_PRICE_P5000',
@@ -72,7 +87,7 @@ export function createStripeClient(fetchImpl: typeof globalThis.fetch): StripeCl
       }
       const baseUrl = (env.EVAL_PUBLIC_URL?.trim() || DEFAULT_PUBLIC_URL).replace(/\/+$/, '')
       const credits = STRIPE_PACKS[input.pack]
-      const form = new URLSearchParams({
+      const formValues: Record<string, string> = {
         mode: 'payment',
         'line_items[0][price]': priceId,
         'line_items[0][quantity]': '1',
@@ -81,7 +96,27 @@ export function createStripeClient(fetchImpl: typeof globalThis.fetch): StripeCl
         'metadata[userId]': input.userId,
         'metadata[credits]': String(credits),
         'metadata[pack]': input.pack,
-      })
+      }
+
+      if (input.promotionCode !== undefined) {
+        // An explicit code is resolved to a promotion-code id. Stripe rejects
+        // `allow_promotion_codes` together with `discounts`, so only one of
+        // the two parameters may be sent.
+        const code = input.promotionCode.trim()
+        if (!PROMOTION_CODE_PATTERN.test(code)) {
+          throw new StripeError(
+            400,
+            'promotionCode must be 1-64 characters of letters, numbers, "_" or "-".',
+            '',
+            'invalid_promotion_code',
+          )
+        }
+        formValues['discounts[0][promotion_code]'] = await lookupPromotionCode(fetchImpl, secret, code)
+      } else if (allowPromotionCodes(env)) {
+        formValues.allow_promotion_codes = 'true'
+      }
+
+      const form = new URLSearchParams(formValues)
 
       let response: Response
       try {
@@ -117,6 +152,71 @@ export function createStripeClient(fetchImpl: typeof globalThis.fetch): StripeCl
       return { url: body.url, id: body.id }
     },
   }
+}
+
+/** True unless the operator explicitly disabled Checkout's code input. */
+function allowPromotionCodes(env: Env): boolean {
+  return env.EVAL_ALLOW_PROMOTION_CODES?.trim() !== 'false'
+}
+
+/**
+ * Resolve a buyer-entered promotion code to its Stripe promotion-code id.
+ *
+ * Unknown/inactive codes are a 400 `invalid_promotion_code`; a failed lookup
+ * (transport, non-2xx, malformed response) is a 502 `stripe_error`.
+ */
+async function lookupPromotionCode(
+  fetchImpl: typeof globalThis.fetch,
+  secret: string,
+  code: string,
+): Promise<string> {
+  const url = new URL(PROMOTION_CODES_URL)
+  url.searchParams.set('code', code)
+  url.searchParams.set('active', 'true')
+  url.searchParams.set('limit', '1')
+
+  let response: Response
+  try {
+    response = await fetchImpl(url.toString(), {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${secret}`,
+        accept: 'application/json',
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new StripeError(502, `Stripe promotion-code lookup failed: ${message}`)
+  }
+
+  const text = await response.text().catch(() => '')
+  let body: unknown = null
+  if (text.length > 0) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      throw new StripeError(
+        502,
+        `Stripe promotion-code lookup returned invalid JSON (${response.status})`,
+        text.slice(0, 300),
+      )
+    }
+  }
+  if (!response.ok) {
+    throw new StripeError(
+      502,
+      `Stripe promotion-code lookup failed (${response.status})${stripeMessage(body)}`,
+      text.slice(0, 300),
+    )
+  }
+
+  const data = isRecord(body) && Array.isArray(body.data) ? body.data : null
+  const first = data?.find(isRecord)
+  const id = first !== undefined && typeof first.id === 'string' && first.id.length > 0 ? first.id : null
+  if (id === null || first?.active === false) {
+    throw new StripeError(400, 'That promotion code is unknown, expired, or inactive.', '', 'invalid_promotion_code')
+  }
+  return id
 }
 
 /**

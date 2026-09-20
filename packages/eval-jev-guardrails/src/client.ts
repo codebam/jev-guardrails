@@ -12,6 +12,7 @@ import { EVAL_CREDIT_PACKS } from './types.js'
 import type { EvalResolvedConfig } from './types.js'
 import type {
   EvalActionDescriptor,
+  EvalCheckoutOptions,
   EvalCheckoutResponse,
   EvalClientOptions,
   EvalCreditPack,
@@ -25,6 +26,20 @@ import type {
 import { PACKAGE_VERSION } from './version.js'
 
 export { EvalConfigError }
+
+/**
+ * Trim and validate a Stripe promotion code before any network request.
+ * Stripe promotion codes are 1-64 characters of letters, numbers, `_`, or `-`.
+ */
+export function normalizePromotionCode(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0) throw new EvalConfigError('promotion code must not be empty')
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(trimmed)) {
+    throw new EvalConfigError('promotion code must be 1-64 characters of letters, numbers, "_" or "-"')
+  }
+  return trimmed
+}
 
 /** The service is unreachable, timed out, or returned a non-JSON body. */
 export class EvalTransportError extends Error {
@@ -140,13 +155,14 @@ export class EvalGuardrailsClient {
    * before any network request so the CLI can exit 2 without touching the
    * service.
    */
-  async checkout(pack: EvalCreditPack): Promise<EvalCheckoutResponse> {
+  async checkout(pack: EvalCreditPack, options: EvalCheckoutOptions = {}): Promise<EvalCheckoutResponse> {
     if (!EVAL_CREDIT_PACKS.includes(pack)) {
       throw new EvalConfigError(`pack must be one of ${EVAL_CREDIT_PACKS.join(', ')}; received ${JSON.stringify(pack)}`)
     }
+    const promotionCode = normalizePromotionCode(options.promotionCode)
     const result = await this.request<EvalCheckoutResponse>('/v1/billing/checkout', {
       method: 'POST',
-      body: { pack },
+      body: promotionCode === undefined ? { pack } : { pack, promotionCode },
       operation: 'checkout',
     })
     if (result === null || typeof result !== 'object' || typeof result.url !== 'string' || result.url.length === 0) {

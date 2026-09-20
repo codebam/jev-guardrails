@@ -234,3 +234,31 @@ test('checkout rejects a response without a Stripe URL', async () => {
     await service.close()
   }
 })
+
+test('checkout forwards a normalized promotion code', async () => {
+  const service = await startFakeEvalService()
+  try {
+    const client = new EvalGuardrailsClient({ apiKey: 'eval_test', baseUrl: service.url })
+    const checkout = await client.checkout('p5000', { promotionCode: '  SAVE10  ' })
+    assert.equal(checkout.url, 'https://checkout.stripe.test/session/p5000')
+    assert.deepEqual(service.requests.at(-1).body, { pack: 'p5000', promotionCode: 'SAVE10' })
+  } finally {
+    await service.close()
+  }
+})
+
+test('checkout rejects an invalid promotion code before any network request', async () => {
+  const service = await startFakeEvalService()
+  try {
+    const client = new EvalGuardrailsClient({ apiKey: 'eval_test', baseUrl: service.url })
+    await assert.rejects(() => client.checkout('p5000', { promotionCode: 'bad code!' }), (error) => {
+      assert.ok(error instanceof EvalConfigError)
+      assert.match(error.message, /promotion code/)
+      return true
+    })
+    await assert.rejects(() => client.checkout('p5000', { promotionCode: '   ' }), /must not be empty/)
+    assert.equal(service.requests.length, 0)
+  } finally {
+    await service.close()
+  }
+})

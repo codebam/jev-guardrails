@@ -345,3 +345,25 @@ function installDshFixture(profileDir) {
   )
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '# profile patch\n[]\n')
 }
+
+test('CLI buy --promo forwards a valid code and rejects an invalid one locally', async () => {
+  const service = await startFakeEvalService()
+  const home = tempHome()
+  const cwd = mkdtempSync(join(tmpdir(), 'eval-jev-cli-promo-'))
+  try {
+    const env = { EVAL_API_KEY: 'eval_test', EVAL_BASE_URL: service.url }
+    const buy = capture()
+    assert.equal(await runCli(['buy', '--pack', 'p5000', '--promo', 'SAVE10'], { ...buy.io, env, home, cwd }), 0)
+    assert.match(buy.stdout(), /Stripe Checkout URL: https:\/\/checkout\.stripe\.test\/session\/p5000/)
+    assert.deepEqual(service.requests.at(-1).body, { pack: 'p5000', promotionCode: 'SAVE10' })
+
+    const invalid = capture()
+    assert.equal(await runCli(['buy', '--pack', 'p5000', '--promo', 'bad code!'], { ...invalid.io, env, home, cwd }), 2)
+    assert.match(invalid.stderr(), /promotion code/)
+    assert.equal(service.requests.length, 1)
+  } finally {
+    await service.close()
+    rmSync(home, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
