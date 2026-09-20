@@ -1,0 +1,30 @@
+{
+  "name": "@codebam/eval-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hosted eval.seanbehan.ca service: Cloudflare Worker + D1 for Jev-backed guardrails.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "node --test test/",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "db:migrate:local": "wrangler d1 migrations apply eval-guardrails-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply eval-guardrails-db --remote",
+    "db:create": "wrangler d1 create eval-guardrails-db"
+  },
+  "dependencies": {
+    "@codebam/jev-guardrails": "file:../../packages/jev-guardrails"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.0.0"
+  }
+}

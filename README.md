@@ -21,10 +21,14 @@ under a policy you can read and tune.
 
 ## Repository layout
 
-| Package | Description |
+| Package / app | Description |
 | --- | --- |
-| [`@codebam/jev-guardrails`](packages/jev-guardrails) | Framework-agnostic TypeScript library. No DeepSeek Harness dependency. Works with the TypeSafe System One API or OpenRouter's Decisions API. |
-| [`@codebam/dsh-jev-guardrails`](packages/dsh-jev-guardrails) | DeepSeek Harness (Cordis) plugin. Registers `agent/pre-step`, `tools/pre-execute`, `tools/post-execute`, and output-steering listeners that call the library. |
+| [`@codebam/jev-guardrails`](packages/jev-guardrails) | Framework-agnostic TypeScript library. Works with the TypeSafe System One API, OpenRouter's Decisions API, or the hosted eval service. |
+| [`@codebam/dsh-jev-guardrails`](packages/dsh-jev-guardrails) | DeepSeek Harness (Cordis) bundle. Evaluates every tool call through `tools/pre-execute`, plus prompt, tool-result, and response screening. |
+| [`@codebam/eval-jev-guardrails`](packages/eval-jev-guardrails) | Client SDK, `eval-jev` CLI, and real OpenCode / Hermes Agent / DeepSeek Harness hook installers for the paid service. |
+| [`apps/eval-site`](apps/eval-site) | Cloudflare Worker + D1 service behind `eval.seanbehan.ca`: API keys, prepaid credits, and the SystemOne-compatible proxy. |
+| [`docs/install`](docs/install) | One-command harness install guides. |
+| [`docs/pricing.md`](docs/pricing) | Credit definition and worst-case cost-plus pricing. |
 
 ## Quick start (library)
 
@@ -61,6 +65,30 @@ const claim = await guardrails.verifyClaim({
 
 See the [library README](packages/jev-guardrails/README.md) for policies,
 batteries, fail modes, redaction, caching, and custom questions.
+
+## Hosted Eval Guardrails
+
+The paid product is the service at `eval.seanbehan.ca`. It owns the Jev key,
+meters each evaluation against prepaid credits, and installs **real hooks** so
+every tool call is evaluated before it executes:
+
+| Harness | Hook | Install |
+| --- | --- | --- |
+| OpenCode | plugin `tool.execute.before` | `eval-jev install opencode` |
+| Hermes Agent | plugin `pre_tool_call` | `eval-jev install hermes` |
+| DeepSeek Harness | bundle `tools/pre-execute` | `eval-jev install dsh --profile web` |
+| Any MCP client | MCP tools | remote/stdio MCP bridge |
+
+```bash
+npx -y @codebam/eval-jev-guardrails login
+npx -y @codebam/eval-jev-guardrails install opencode
+npx -y @codebam/eval-jev-guardrails doctor opencode
+```
+
+Start with the [installation guides](docs/install/README.md) and the
+[pricing model](docs/pricing.md). The service starts with 250 free credits
+after GitHub login; larger packs are priced to cover worst-case provider and
+hosting cost at every size.
 
 ## Quick start (DeepSeek Harness plugin)
 

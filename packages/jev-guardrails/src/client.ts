@@ -15,6 +15,7 @@ import type {
 } from '@typesafe-ai/sdk'
 import { createHash } from 'node:crypto'
 import { ResponseCache } from './cache.js'
+import { HostedTransport } from './hosted.js'
 import { OpenRouterDecisionsTransport } from './openrouter.js'
 import { redactState, redactString } from './redact.js'
 import type { CacheSettings, JevProvider, JevTransport, RedactorOptions } from './types.js'
@@ -48,6 +49,21 @@ export interface TransportOptions {
 /** Build the default Jev transport, or return an injected one unchanged. */
 export function createTransport(options: TransportOptions): JevTransport {
   if (options.client !== undefined) return options.client
+  if (options.provider === 'hosted') {
+    const apiKey = options.apiKey ?? process.env.EVAL_API_KEY ?? ''
+    if (apiKey.trim().length === 0) {
+      throw new GuardrailsError(
+        'CONFIG',
+        'a hosted eval API key is required for provider "hosted". Set EVAL_API_KEY or pass apiKey explicitly.',
+      )
+    }
+    return new HostedTransport({
+      apiKey,
+      ...(options.baseURL !== undefined ? { baseURL: options.baseURL } : {}),
+      model: options.model,
+      ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+    })
+  }
   if (options.provider === 'openrouter') {
     const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY ?? ''
     if (apiKey.trim().length === 0) {

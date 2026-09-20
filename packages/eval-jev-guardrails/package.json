@@ -1,0 +1,75 @@
+{
+  "name": "@codebam/eval-jev-guardrails",
+  "version": "0.1.0",
+  "description": "Client, CLI, and real tool-call hooks for the hosted eval.seanbehan.ca guardrails service (OpenCode, Hermes Agent, DeepSeek Harness).",
+  "keywords": [
+    "jev",
+    "guardrails",
+    "eval",
+    "opencode",
+    "hermes",
+    "deepseek-harness",
+    "dsh",
+    "tool-call",
+    "pre-tool-call"
+  ],
+  "license": "MIT",
+  "author": "Sean Behan (codebam)",
+  "homepage": "https://github.com/codebam/dsh-jev-guardrails#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codebam/dsh-jev-guardrails.git",
+    "directory": "packages/eval-jev-guardrails"
+  },
+  "bugs": {
+    "url": "https://github.com/codebam/dsh-jev-guardrails/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "eval-jev": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./opencode": {
+      "types": "./dist/opencode.d.ts",
+      "default": "./dist/opencode.js"
+    },
+    "./install": {
+      "types": "./dist/install/index.d.ts",
+      "default": "./dist/install/index.js"
+    },
+    "./doctor": {
+      "types": "./dist/doctor.d.ts",
+      "default": "./dist/doctor.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check": "npm run typecheck && for f in test/*.mjs test/helpers/*.mjs; do node --check \"$f\" || exit 1; done && python3 -c \"import ast,pathlib; ast.parse(pathlib.Path('templates/hermes/eval-jev-guardrails/__init__.py').read_text(encoding='utf-8'))\""
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

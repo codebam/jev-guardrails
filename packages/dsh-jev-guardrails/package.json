@@ -51,7 +51,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
-    "@codebam/jev-guardrails": "^0.1.0"
+    "@codebam/jev-guardrails": "^0.1.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",

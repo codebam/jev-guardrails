@@ -3,11 +3,12 @@
  * Real DeepSeek Harness smoke test.
  *
  * Creates a throwaway DSH_HOME, lets dsh initialize the shipped `headless`
- * profile, symlinks this workspace's two packages into it, selects
- * `@codebam/dsh-jev-guardrails` as a profile bundle, and checks that:
+ * profile, symlinks this workspace's packages into it, runs the real
+ * `eval-jev install dsh` installer against that profile, and checks that:
  *
- * 1. the bundle's cordis.patch.yml inserts the plugin row;
- * 2. a real dsh boot accepts the Config schema and calls the plugin's apply.
+ * 1. the installer selects the bundle and writes the hosted-provider row;
+ * 2. the bundle's cordis.patch.yml composes into a real dsh config dump;
+ * 3. a real dsh boot accepts the Config schema and calls the plugin's apply.
  *
  * It does not call a model or a guardrail provider. Exits 0 with a skip notice
  * when `dsh` is not on PATH.
@@ -70,24 +71,37 @@ try {
     if (existsSync(link)) rmSync(link, { recursive: true, force: true })
     symlinkSync(target, link, 'dir')
   }
-  // Select the package as a profile bundle; dsh must read its
-  // package.json `dsh.bundle.patch`, not a hand-written user patch row.
-  const manifestPath = join(profile, 'package.json')
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  manifest.dependencies = manifest.dependencies ?? {}
-  manifest.dependencies['@codebam/dsh-jev-guardrails'] = '0.1.1'
-  const bundles = manifest.dsh?.profile?.bundles ?? []
-  if (!bundles.includes('@codebam/dsh-jev-guardrails')) bundles.push('@codebam/dsh-jev-guardrails')
-  manifest.dsh = { ...(manifest.dsh ?? {}), profile: { ...(manifest.dsh?.profile ?? {}), bundles } }
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  // Run the real product installer. --no-install keeps the smoke hermetic;
+  // the package is already reachable through the symlinks above.
+  const installer = spawnSync(
+    process.execPath,
+    [
+      join(repoRoot, 'packages', 'eval-jev-guardrails', 'dist', 'bin.js'),
+      'install', 'dsh',
+      '--profile', 'headless',
+      '--dsh-home', dshHome,
+      '--no-install',
+    ],
+    {
+      cwd: home,
+      env: { ...process.env, EVAL_BASE_URL: 'https://eval.seanbehan.ca' },
+      encoding: 'utf8',
+    },
+  )
+  if (installer.status !== 0) throw new Error(`eval-jev install dsh failed:\n${installer.stderr || installer.stdout}`)
 
-  const dump = runDsh(['--dump-config'], { OPENROUTER_API_KEY: 'dsh-smoke-dummy' })
+  const patch = readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')
+  if (!patch.includes('provider: hosted')) throw new Error('the installer did not write a hosted provider row')
+  if (!patch.includes('apiKey: !!js process.env.EVAL_API_KEY')) throw new Error('the installer did not reference EVAL_API_KEY')
+
+  const dump = runDsh(['--dump-config'], { EVAL_API_KEY: 'dsh-smoke-dummy' })
   if (dump.status !== 0) throw new Error(`dsh config dump failed:\n${dump.stderr || dump.stdout}`)
   if (!dump.stdout.includes("name: '@codebam/dsh-jev-guardrails'")) {
     throw new Error('the bundle patch did not insert the plugin row into the composed dsh config')
   }
+  if (!dump.stdout.includes('provider: hosted')) throw new Error('the composed dsh config did not adopt the hosted provider override')
 
-  const boot = runDsh(['--help'], { OPENROUTER_API_KEY: 'dsh-smoke-dummy' })
+  const boot = runDsh(['--help'], { EVAL_API_KEY: 'dsh-smoke-dummy' })
   if (boot.status !== 0) throw new Error(`dsh boot failed:\n${boot.stderr || boot.stdout}`)
   if (!boot.stdout.includes('headless')) throw new Error('dsh did not boot the headless app')
 

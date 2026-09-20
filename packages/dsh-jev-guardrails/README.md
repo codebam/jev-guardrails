@@ -55,10 +55,15 @@ key is available it logs a warning and leaves the profile running.
 
 `provider` defaults to `auto`:
 
-1. explicit `apiKey` starting with `sk-or-` → OpenRouter;
+1. explicit `apiKey`: `sk-or-` → OpenRouter, `eval_` → hosted eval service;
 2. otherwise `TYPESAFE_API_KEY` → TypeSafe System One API;
 3. otherwise `OPENROUTER_API_KEY` → OpenRouter Decisions API;
-4. otherwise TypeSafe (the plugin then disables itself with a warning).
+4. otherwise `EVAL_API_KEY` → the paid `eval.seanbehan.ca` service;
+5. otherwise TypeSafe (the plugin then disables itself with a warning).
+
+`hosted` points the same guardrails at the eval service, which owns the Jev key
+and charges prepaid credits per evaluation. It is the provider that
+`eval-jev install dsh` configures.
 
 On the author's dsh hosts the launcher exports `OPENROUTER_API_KEY` from
 `/run/secrets/openrouter-api-key`, so OpenRouter is selected automatically and
@@ -69,7 +74,7 @@ no key is written into the profile. Force a provider explicitly with
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `provider` | `auto` | `auto`, `typesafe`, or `openrouter`. |
+| `provider` | `auto` | `auto`, `typesafe`, `openrouter`, or `hosted`. |
 | `apiKey` | — | Provider key; otherwise the provider environment variable. |
 | `baseURL` | provider default | Gateway or test endpoint. |
 | `model` | provider default | `jev-latest` (TypeSafe) or `~typesafe/jev-latest` (OpenRouter). |

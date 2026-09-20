@@ -10,3 +10,11 @@ npm-debug.log*
 !.env.example
 coverage/
 .uje*
+
+# Cloudflare / service
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+__pycache__/
+*.pyc

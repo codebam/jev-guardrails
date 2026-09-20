@@ -9,7 +9,7 @@
  */
 import z from '@deepseek-ai/schemastery'
 
-const PROVIDERS = ['auto', 'typesafe', 'openrouter']
+const PROVIDERS = ['auto', 'typesafe', 'openrouter', 'hosted']
 const INPUT_MODES = ['off', 'observe', 'warn', 'block']
 const ACTION_MODES = ['off', 'observe', 'enforce']
 const OBSERVATION_MODES = ['off', 'observe', 'suspicious', 'all']
@@ -23,7 +23,7 @@ const LOG_MODES = ['off', 'decisions', 'verbose']
 
 /** Cordis/schemastery schema for the plugin row. */
 export const Config = z.object({
-  provider: z.union(PROVIDERS).default('auto').description('`auto` detects the provider from the available key; or force `typesafe` / `openrouter`.'),
+  provider: z.union(PROVIDERS).default('auto').description('`auto` detects the provider from the available key; or force `typesafe` / `openrouter` / `hosted`.'),
   apiKey: z.string().required(false).description('Provider API key; falls back to TYPESAFE_API_KEY or OPENROUTER_API_KEY.'),
   baseURL: z.string().required(false).description('Provider API root or full endpoint, for gateways and tests.'),
   model: z.string().required(false).description('Jev model alias or version. Defaults to `jev-latest` (TypeSafe) or `~typesafe/jev-latest` (OpenRouter).'),
@@ -142,12 +142,15 @@ export function normalizeConfig(input) {
  * provider without extra configuration.
  */
 function resolveProvider(requested, explicitKey) {
-  if (requested === 'typesafe' || requested === 'openrouter') return requested
+  if (requested === 'typesafe' || requested === 'openrouter' || requested === 'hosted') return requested
   if (typeof explicitKey === 'string' && explicitKey.length > 0) {
-    return explicitKey.startsWith('sk-or-') ? 'openrouter' : 'typesafe'
+    if (explicitKey.startsWith('sk-or-')) return 'openrouter'
+    if (explicitKey.startsWith('eval_')) return 'hosted'
+    return 'typesafe'
   }
   if ((process.env.TYPESAFE_API_KEY ?? '').trim().length > 0) return 'typesafe'
   if ((process.env.OPENROUTER_API_KEY ?? '').trim().length > 0) return 'openrouter'
+  if ((process.env.EVAL_API_KEY ?? '').trim().length > 0) return 'hosted'
   return 'typesafe'
 }
 

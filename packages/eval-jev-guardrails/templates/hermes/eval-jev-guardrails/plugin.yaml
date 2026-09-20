@@ -1,0 +1,13 @@
+name: eval-jev-guardrails
+version: 0.1.0
+description: "Jev-backed eval.seanbehan.ca guardrails for Hermes tool calls. Registers pre_tool_call and blocks a tool before execution when the hosted evaluator says block or support."
+author: Sean Behan (codebam)
+hooks:
+  - pre_tool_call
+provides_hooks:
+  - pre_tool_call
+python_dependencies: []
+tags:
+  - guardrails
+  - safety
+  - tool-calls

@@ -24,12 +24,17 @@ Node.js 20 or newer.
 | --- | --- | --- | --- |
 | `typesafe` (default) | `https://api.typesafe.ai/v1/systemone` via `@typesafe-ai/sdk` | `TYPESAFE_API_KEY` | `jev-latest` |
 | `openrouter` | `https://openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `~typesafe/jev-latest` |
+| `hosted` | `https://eval.seanbehan.ca/v1/systemone` | `EVAL_API_KEY` (`eval_...`) | `jev-latest` |
+
+`hosted` is the paid `eval.seanbehan.ca` service: it owns the provider key and
+meters each evaluation against prepaid credits, so callers never need a Jev key.
 
 ```ts
 import { createGuardrails } from '@codebam/jev-guardrails'
 
 const direct = createGuardrails()                       // TypeSafe
 const routed = createGuardrails({ provider: 'openrouter' }) // OpenRouter Decisions API
+const hosted = createGuardrails({ provider: 'hosted' })     // eval.seanbehan.ca credits
 ```
 
 OpenRouter's Decisions API is not the OpenAI-compatible chat endpoint. It uses

@@ -1,6 +1,6 @@
 {
   "name": "@codebam/jev-guardrails",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Jev-backed guardrails and verification for LLM inputs, outputs, tool calls, and untrusted content.",
   "keywords": [
     "jev",

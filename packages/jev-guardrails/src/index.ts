@@ -44,6 +44,13 @@ export {
 } from './heuristics.js'
 export { GuardrailsError, JevCaller, createTransport } from './client.js'
 export {
+  HOSTED_DEFAULT_BASE_URL,
+  HostedError,
+  HostedTransport,
+  createHostedTransport,
+  resolveHostedEndpoint,
+} from './hosted.js'
+export {
   OPENROUTER_DECISIONS_ENDPOINT,
   OPENROUTER_DEFAULT_MODEL,
   OpenRouterDecisionsTransport,

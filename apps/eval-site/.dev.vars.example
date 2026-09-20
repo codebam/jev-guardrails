@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev`; never commit the real file.
+OPENROUTER_API_KEY=replace-with-your-openrouter-key
+EVAL_ADMIN_TOKEN=replace-with-a-long-random-bootstrap-token
+OPENROUTER_MODEL=~typesafe/jev-latest

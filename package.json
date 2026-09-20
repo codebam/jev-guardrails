@@ -6,18 +6,21 @@
   "type": "module",
   "workspaces": [
     "packages/jev-guardrails",
-    "packages/dsh-jev-guardrails"
+    "packages/dsh-jev-guardrails",
+    "packages/eval-jev-guardrails",
+    "apps/eval-site"
   ],
   "scripts": {
-    "build": "npm run build --workspace @codebam/jev-guardrails",
-    "typecheck": "npm run typecheck --workspace @codebam/jev-guardrails",
-    "check": "npm run check --workspace @codebam/jev-guardrails && npm run check --workspace @codebam/dsh-jev-guardrails",
-    "test": "npm run build && npm run test --workspaces --if-present",
-    "test:lib": "npm run build && npm run test --workspace @codebam/jev-guardrails",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check": "npm run check --workspaces --if-present",
+    "test": "npm run build && npm test --workspaces --if-present",
+    "test:lib": "npm run build --workspace @codebam/jev-guardrails && npm run test --workspace @codebam/jev-guardrails",
     "peers": "node scripts/link-dsh-peers.mjs",
-    "pack:dry": "npm run build && npm pack --dry-run --workspace @codebam/jev-guardrails && npm pack --dry-run --workspace @codebam/dsh-jev-guardrails",
+    "pack:dry": "npm run build && npm pack --dry-run --workspace @codebam/jev-guardrails && npm pack --dry-run --workspace @codebam/dsh-jev-guardrails && npm pack --dry-run --workspace @codebam/eval-jev-guardrails",
     "test:live": "npm run build && node scripts/live-openrouter.mjs",
-    "test:dsh": "npm run build && node scripts/dsh-smoke.mjs"
+    "test:dsh": "npm run build && node scripts/dsh-smoke.mjs",
+    "test:service": "npm test --workspace @codebam/eval-site"
   },
   "engines": {
     "node": ">=20"

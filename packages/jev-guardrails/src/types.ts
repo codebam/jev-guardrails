@@ -33,9 +33,11 @@ export type GuardSide = 'input' | 'output' | 'observation' | 'action'
  *
  * - `typesafe`: TypeSafe's own `POST /v1/systemone` endpoint through
  *   `@typesafe-ai/sdk`;
- * - `openrouter`: OpenRouter's Decisions API (`POST /api/alpha/decisions`).
+ * - `openrouter`: OpenRouter's Decisions API (`POST /api/alpha/decisions`);
+ * - `hosted`: the paid `eval.seanbehan.ca` service (SystemOne-shaped proxy
+ *   with API keys and credits).
  */
-export type JevProvider = 'typesafe' | 'openrouter'
+export type JevProvider = 'typesafe' | 'openrouter' | 'hosted'
 
 /** Token usage plus OpenRouter's estimated cost when reported. */
 export interface GuardUsage {
@@ -289,21 +291,23 @@ export interface JevGuardrailsOptions {
   /**
    * Which service answers the questions. Default: `typesafe`.
    * `openrouter` selects OpenRouter's Decisions API and uses
-   * `OPENROUTER_API_KEY` when no explicit key is given.
+   * `OPENROUTER_API_KEY` when no explicit key is given. `hosted` selects the
+   * paid eval service and uses `EVAL_API_KEY`.
    */
   provider?: JevProvider
   /**
    * Provider API key. Fallbacks: `TYPESAFE_API_KEY` for `typesafe`,
-   * `OPENROUTER_API_KEY` for `openrouter`.
+   * `OPENROUTER_API_KEY` for `openrouter`, `EVAL_API_KEY` for `hosted`.
    */
   apiKey?: string
   /**
    * API root or full endpoint. Defaults: `https://api.typesafe.ai` for
-   * `typesafe`, `https://openrouter.ai/api/alpha/decisions` for `openrouter`.
+   * `typesafe`, `https://openrouter.ai/api/alpha/decisions` for `openrouter`,
+   * `https://eval.seanbehan.ca` for `hosted`.
    */
   baseURL?: string
   /**
-   * Default model. Defaults: `jev-latest` for `typesafe`,
+   * Default model. Defaults: `jev-latest` for `typesafe` and `hosted`,
    * `~typesafe/jev-latest` for `openrouter`.
    */
   model?: string
