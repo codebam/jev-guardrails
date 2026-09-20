@@ -18,14 +18,14 @@ EVAL_FREE_CREDITS = "250"
 EVAL_PUBLIC_URL = "https://eval.seanbehan.ca"
 
 # Public GitHub OAuth app client id. The device flow needs no client secret.
-GITHUB_CLIENT_ID = ""
+GITHUB_CLIENT_ID = "Ov23liR6pdTAUotNybDJ"
 
 # Stripe price ids are public identifiers, not secrets. Uncomment and fill in
 # after creating the products in Stripe:
-# STRIPE_PRICE_P5000 = "price_..."
-# STRIPE_PRICE_P25000 = "price_..."
-# STRIPE_PRICE_P100000 = "price_..."
-# STRIPE_PRICE_P500000 = "price_..."
+STRIPE_PRICE_P5000 = "price_1UHZXhGZ6UCawHaLRTM4RbN9"
+STRIPE_PRICE_P25000 = "price_1UHZXiGZ6UCawHaLWcxtgekN"
+STRIPE_PRICE_P100000 = "price_1UHZXiGZ6UCawHaLVIa6OH36"
+STRIPE_PRICE_P500000 = "price_1UHZXjGZ6UCawHaLeydD4DEw"
 
 # Secrets are never stored in this file. Set them with:
 #   npx wrangler secret put OPENROUTER_API_KEY
